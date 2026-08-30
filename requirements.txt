@@ -1,6 +1,4 @@
-"""
-Description: Coordinates the components and controls the end-to-end autonomous ML research workflow.
-Owner: Charlton / David
-Input: Research session configuration and current state
-Output: Completed research session with experiment results and best model
-"""
+python-dotenv
+google-genai
+pydantic
+docker
