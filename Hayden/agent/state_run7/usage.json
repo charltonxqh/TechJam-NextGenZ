@@ -1,0 +1,12 @@
+{
+  "calls": 4,
+  "prompt_tokens": 22608,
+  "output_tokens": 6745,
+  "thinking_tokens": 16930,
+  "cached_tokens": 0,
+  "total_tokens": 46283,
+  "llm_seconds": 131.9,
+  "wall_clock_minutes": 5.0,
+  "iterations_used": 4,
+  "manual_interventions": 0
+}

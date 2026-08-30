@@ -1,0 +1,47 @@
+[
+  {
+    "mechanism": "Intra-user pairwise ranking loss (BPR over (pos, neg) pairs drawn within the same user) replacing pointwise BCE on shuffled rows",
+    "measured_delta": "+0.0020, +0.0018, +0.0016 across three independent runs",
+    "verdict": "REPRODUCIBLY POSITIVE but small"
+  },
+  {
+    "mechanism": "DeepFM: an MLP over the same embeddings alongside the bilinear FM term, still trained pointwise",
+    "measured_delta": "+0.0017 (one run)",
+    "verdict": "POSITIVE, single observation"
+  },
+  {
+    "mechanism": "Raising embedding weight decay 1e-6 -> 1e-3",
+    "measured_delta": "-0.0044",
+    "verdict": "NEGATIVE"
+  },
+  {
+    "mechanism": "Increasing BPR pair-sampling density (2 -> 8 pairs per positive)",
+    "measured_delta": "-0.0012",
+    "verdict": "NEGATIVE - more pairs of the same kind add no information"
+  },
+  {
+    "mechanism": "Per-user empirical log-odds offsets added as fixed logits (Bayesian-smoothed)",
+    "measured_delta": "-0.0001",
+    "verdict": "NEUTRAL - consistent with per-user constants being invisible to the metric"
+  },
+  {
+    "mechanism": "Replaced the standard linear FM and pointwise BCE loss with a DeepFM model (FM + 2-layer MLP) trained via intra-user BPR pairwise ranking loss.",
+    "measured_delta": "-0.0000",
+    "verdict": "NEUTRAL"
+  },
+  {
+    "mechanism": "Replaced pointwise BCE loss on individual rows with intra-user BPR pairwise ranking loss over (positive, negative) impression pairs drawn within each user.",
+    "measured_delta": "+0.0005",
+    "verdict": "NEUTRAL"
+  },
+  {
+    "mechanism": "Replaced pointwise BCE loss on individual shuffled rows with intra-user listwise softmax cross-entropy loss grouped by user_id.",
+    "measured_delta": "-0.0019",
+    "verdict": "NEGATIVE"
+  },
+  {
+    "mechanism": "Replaced pure pointwise BCE loss with a joint loss objective: L_joint = L_BCE + L_BPR, where L_BPR is computed over all intra-user (positive, negative) impression pairs within each user's group in the minibatch.",
+    "measured_delta": "-0.0019",
+    "verdict": "NEGATIVE"
+  }
+]

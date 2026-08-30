@@ -1,0 +1,76 @@
+"""Anti-self-deception guards.
+
+The signature failure of autonomous ML agents is optimising hard against their
+own bug — producing a beautiful number that means nothing. These checks make
+the two worst versions of that structurally impossible rather than merely
+discouraged.
+"""
+from __future__ import annotations
+
+import hashlib
+import pathlib
+
+KIT = pathlib.Path(__file__).resolve().parent.parent / "kuairand-starter-kit"
+CACHE = pathlib.Path(__file__).resolve().parent / "cache"
+
+# sha256 of the pristine organiser-provided scorer, recorded at setup.
+EVALUATE_SHA = "PIN_ON_FIRST_RUN"
+_PIN_FILE = pathlib.Path(__file__).resolve().parent / "state" / "evaluate.sha256"
+
+
+def _sha(p: pathlib.Path) -> str:
+    return hashlib.sha256(p.read_bytes()).hexdigest()
+
+
+def verify_integrity() -> None:
+    """Raise if the scorer changed or the test split leaked into the cache."""
+    ev = KIT / "evaluate.py"
+    if not ev.exists():
+        raise RuntimeError(f"evaluate.py missing at {ev}")
+
+    digest = _sha(ev)
+    _PIN_FILE.parent.mkdir(exist_ok=True)
+    if _PIN_FILE.exists():
+        pinned = _PIN_FILE.read_text().strip()
+        if digest != pinned:
+            raise RuntimeError(
+                "evaluate.py HAS BEEN MODIFIED.\n"
+                f"  pinned : {pinned}\n  now    : {digest}\n"
+                "The scorer is the pinned task definition. Every number produced "
+                "after this point would be meaningless. Halting."
+            )
+    else:
+        _PIN_FILE.write_text(digest)
+
+    # The cache must never contain test data — the agent cannot peek at what
+    # is not there.
+    import numpy as np
+    p = CACHE / "trainvalid.npz"
+    if p.exists():
+        keys = set(np.load(p, allow_pickle=False).files)
+        leaked = {k for k in keys if "te" in k.lower() and k not in ("fields",)}
+        if leaked:
+            raise RuntimeError(f"Test data leaked into the cache: {sorted(leaked)}")
+
+
+def sanity_bounds(primary: float) -> list[str]:
+    """Scores that are impossible or implausible — treat as bugs, not results."""
+    warn = []
+    if primary < 0.4834:
+        warn.append(f"primary {primary:.4f} is BELOW random (0.4834) — this is a bug, "
+                    f"not a result.")
+    if primary > 0.8484:
+        warn.append(f"primary {primary:.4f} EXCEEDS the oracle ceiling (0.8484) — "
+                    f"impossible. There is a leak or an evaluation error.")
+    if primary > 0.68:
+        warn.append(f"primary {primary:.4f} is a very large jump over the 0.6015 "
+                    f"baseline. Verify across seeds before believing it.")
+    return warn
+
+
+if __name__ == "__main__":
+    verify_integrity()
+    print("integrity OK")
+    print(f"  evaluate.py sha256 = {_sha(KIT / 'evaluate.py')[:16]}...")
+    for v in (0.40, 0.60, 0.70, 0.90):
+        print(f"  sanity({v}) -> {sanity_bounds(v) or 'ok'}")

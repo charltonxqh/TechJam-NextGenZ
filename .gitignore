@@ -64,3 +64,33 @@ workspaces/
 # =========================
 
 .ipynb_checkpoints/
+# =========================
+# Regenerable experiment artefacts  (added 2026-08-30)
+# =========================
+# Model predictions and encoded feature caches. Every one of these is
+# reproducible by re-running the scripts, they are large, and they were the
+# bulk of a 208-file merge conflict.
+
+*.npy
+*.npz
+*/agent/cache/
+*/agent/runs/
+*/agent/state/archive_*/
+catboost_info/
+*.tsv
+*.tfevents
+
+# Superseded submission files. The three that matter are committed:
+#   submission_v11.csv          0.6012  best hand-built ensemble
+#   submission_agent.csv        0.5982  agent run, inherited tree
+#   submission_agent_clean.csv  0.5966  agent run, zero inherited knowledge
+# Everything else is an intermediate, kept on disk but not in git.
+*/agent/state/submission.csv
+*/agent/state/submission_v2.csv
+*/agent/state/submission_v5.csv
+*/agent/state/submission_v6.csv
+*/agent/state/submission_v9.csv
+*/agent/state/submission_v10.csv
+*/agent/state/submission_blend.csv
+*/agent/state/submission_gauc.csv
+*/agent/state/submission_big_*.csv
