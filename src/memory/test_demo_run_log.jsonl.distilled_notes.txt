@@ -1,0 +1,5 @@
+- [model] Implements a standard Factorization Machine class in NumPy with SGD updates for bias and linear weights to establish a baseline. -> 0.5946 (Executing the pipeline for the first time successfully establishes an initial benchmark score of 0.5946.)
+- [features] The change computes each user's average historical watch time from the training data and adds it as a new feature to the dataset. -> 0.6010 (The validation score improved because past viewing duration serves as a strong signal for predicting a user's future engagement.)
+- [model] Replaced the custom NumPy Factorization Machine with a PyTorch DeepFM model combining embeddings, a linear component, and a deep MLP. -> 0.6048 (The neural network architecture allows DeepFM to effectively capture non-linear, higher-order feature interactions, leading to better predictive accuracy.)
+---iter---
+3

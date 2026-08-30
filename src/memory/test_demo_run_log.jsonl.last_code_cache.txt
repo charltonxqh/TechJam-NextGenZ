@@ -1,0 +1,26 @@
+import numpy as np
+import torch
+import torch.nn as nn
+
+class DeepFM(nn.Module):
+    def __init__(self, num_features, embed_dim=16, hidden=64):
+        super().__init__()
+        self.embedding = nn.Embedding(num_features, embed_dim)  # reverted to 16
+        self.fm_linear = nn.Linear(num_features, 1)
+        self.mlp = nn.Sequential(
+            nn.Linear(embed_dim, hidden), nn.ReLU(), nn.Dropout(0.2),
+            nn.Linear(hidden, hidden), nn.ReLU(), nn.Dropout(0.2),
+            nn.Linear(hidden, 1)
+        )
+
+    def forward(self, x):
+        emb = self.embedding(x)
+        fm_out = self.fm_linear(x.float())
+        deep_out = self.mlp(emb.mean(dim=1))
+        return torch.sigmoid(fm_out + deep_out)
+
+
+def add_avg_watch_time_feature(df, train_df):
+    user_avg = train_df.groupby('user_id')['play_time_ms'].mean()
+    df['user_avg_watch_time'] = df['user_id'].map(user_avg).fillna(user_avg.mean())
+    return df
