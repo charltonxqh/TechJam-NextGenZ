@@ -1,14 +1,20 @@
 """
-Description: Coordinates autonomous research actions, coding, deterministic candidate validation and repair, ML experiments, diagnostics, decision policy, persistent memory, and debugging artifacts.
+Description: Coordinates autonomous research actions, on-demand procedural skills, coding, deterministic candidate validation and repair, ML experiments, diagnostics, decision policy, persistent memory, and debugging artifacts.
 Owner: Charlton / David
 Input: Research session configuration and system components
 Output: Completed research session and best experiment result
 """
 
+import json
 import time
 
 from dataclasses import (
     asdict,
+)
+
+from datetime import (
+    datetime,
+    timezone,
 )
 
 from pathlib import (
@@ -72,7 +78,9 @@ from src.research_intelligence.retrieval.research_tool import (
 )
 
 from src.research_intelligence.skill_loader import (
-    load_skills,
+    build_skill_catalog,
+    get_skill_catalog_records,
+    load_skill,
 )
 
 from src.schemas import (
@@ -113,6 +121,8 @@ from src.tools.starterkit_runner import (
 
 
 INFORMATION_ACTION_BUDGET = 4
+
+MAX_SKILLS_PER_ITERATION = 2
 
 MAX_CODE_REPAIR_ATTEMPTS = 2
 
@@ -202,15 +212,35 @@ class Orchestrator:
             )
         )
 
-        skills_context = (
-            load_skills(
-                [
-                    "eda",
-                    "literature_review",
-                    "experiment_design",
-                    "recommender_research",
-                ]
-            )
+        # =====================================================
+        # Initialize progressive skill disclosure
+        # =====================================================
+
+        skill_catalog = (
+            build_skill_catalog()
+        )
+
+        skill_catalog_records = (
+            get_skill_catalog_records()
+        )
+
+        skill_catalog_path = (
+            run_dir
+            / "skill_catalog.json"
+        )
+
+        skill_catalog_path.write_text(
+            json.dumps(
+                skill_catalog_records,
+                indent=2,
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+
+        skill_trace_path = (
+            run_dir
+            / "skill_trace.jsonl"
         )
 
         # =====================================================
@@ -464,6 +494,12 @@ class Orchestrator:
 
             information_actions = 0
 
+            # Skills are scoped to one scientific iteration.
+            loaded_skills: dict[
+                str,
+                str,
+            ] = {}
+
             while True:
 
                 # ---------------------------------------------
@@ -478,6 +514,12 @@ class Orchestrator:
                 research_context = (
                     build_research_context(
                         knowledge_store
+                    )
+                )
+
+                loaded_skills_context = (
+                    self._build_loaded_skills_context(
+                        loaded_skills
                     )
                 )
 
@@ -506,8 +548,20 @@ class Orchestrator:
                         research_context=(
                             research_context
                         ),
-                        skills_context=(
-                            skills_context
+                        skill_catalog=(
+                            skill_catalog
+                        ),
+                        loaded_skills_context=(
+                            loaded_skills_context
+                        ),
+                        loaded_skill_names=list(
+                            loaded_skills.keys()
+                        ),
+                        skill_loads_used=len(
+                            loaded_skills
+                        ),
+                        skill_load_budget=(
+                            MAX_SKILLS_PER_ITERATION
                         ),
                         information_actions_used=(
                             information_actions
@@ -529,6 +583,190 @@ class Orchestrator:
                 )
 
                 # ---------------------------------------------
+                # On-demand skill action
+                # ---------------------------------------------
+
+                if (
+                    action.action_type
+                    == "load_skill"
+                ):
+
+                    requested_skills = (
+                        action.skills
+                        or []
+                    )
+
+                    available_slots = max(
+                        0,
+                        MAX_SKILLS_PER_ITERATION
+                        - len(
+                            loaded_skills
+                        ),
+                    )
+
+                    newly_loaded = []
+
+                    already_loaded = []
+
+                    skipped_budget = []
+
+                    failed_skills = []
+
+                    for skill_name in requested_skills:
+
+                        if (
+                            skill_name
+                            in loaded_skills
+                        ):
+
+                            already_loaded.append(
+                                skill_name
+                            )
+
+                            continue
+
+                        if available_slots <= 0:
+
+                            skipped_budget.append(
+                                skill_name
+                            )
+
+                            continue
+
+                        try:
+
+                            skill_content = (
+                                load_skill(
+                                    skill_name
+                                )
+                            )
+
+                        except Exception as error:
+
+                            failed_skills.append(
+                                {
+                                    "skill": (
+                                        skill_name
+                                    ),
+                                    "error": (
+                                        str(
+                                            error
+                                        )
+                                    ),
+                                }
+                            )
+
+                            continue
+
+                        loaded_skills[
+                            skill_name
+                        ] = (
+                            skill_content
+                        )
+
+                        newly_loaded.append(
+                            skill_name
+                        )
+
+                        available_slots -= 1
+
+                    print(
+                        "Skills requested: "
+                        + (
+                            ", ".join(
+                                requested_skills
+                            )
+                            if requested_skills
+                            else "None"
+                        )
+                    )
+
+                    print(
+                        "Skills loaded: "
+                        + (
+                            ", ".join(
+                                newly_loaded
+                            )
+                            if newly_loaded
+                            else "None"
+                        )
+                    )
+
+                    print(
+                        f"Skill budget: "
+                        f"{len(loaded_skills)}/"
+                        f"{MAX_SKILLS_PER_ITERATION}"
+                    )
+
+                    self._append_jsonl(
+                        path=(
+                            skill_trace_path
+                        ),
+                        payload={
+                            "timestamp": (
+                                datetime.now(
+                                    timezone.utc
+                                )
+                                .isoformat()
+                            ),
+                            "iteration": (
+                                next_iteration
+                            ),
+                            "experiment_id": (
+                                experiment_id
+                            ),
+                            "action_type": (
+                                "load_skill"
+                            ),
+                            "reason": (
+                                action.reason
+                            ),
+                            "requested_skills": (
+                                requested_skills
+                            ),
+                            "newly_loaded": (
+                                newly_loaded
+                            ),
+                            "already_loaded": (
+                                already_loaded
+                            ),
+                            "skipped_budget": (
+                                skipped_budget
+                            ),
+                            "failed_skills": (
+                                failed_skills
+                            ),
+                            "loaded_skill_names": (
+                                list(
+                                    loaded_skills
+                                    .keys()
+                                )
+                            ),
+                            "loaded_skill_chars": {
+                                name: len(
+                                    content
+                                )
+                                for (
+                                    name,
+                                    content,
+                                )
+                                in loaded_skills
+                                .items()
+                            },
+                            "budget_used": (
+                                len(
+                                    loaded_skills
+                                )
+                            ),
+                            "budget_limit": (
+                                MAX_SKILLS_PER_ITERATION
+                            ),
+                        },
+                    )
+
+                    continue
+
+                # ---------------------------------------------
                 # Online research action
                 # ---------------------------------------------
 
@@ -536,6 +774,23 @@ class Orchestrator:
                     action.action_type
                     == "research"
                 ):
+
+                    if (
+                        information_actions
+                        >= INFORMATION_ACTION_BUDGET
+                    ):
+
+                        print(
+                            "Research action skipped: "
+                            "information-action budget "
+                            "already exhausted."
+                        )
+
+                        information_actions = (
+                            INFORMATION_ACTION_BUDGET
+                        )
+
+                        continue
 
                     information_actions += 1
 
@@ -581,6 +836,23 @@ class Orchestrator:
                     action.action_type
                     == "eda"
                 ):
+
+                    if (
+                        information_actions
+                        >= INFORMATION_ACTION_BUDGET
+                    ):
+
+                        print(
+                            "EDA action skipped: "
+                            "information-action budget "
+                            "already exhausted."
+                        )
+
+                        information_actions = (
+                            INFORMATION_ACTION_BUDGET
+                        )
+
+                        continue
 
                     information_actions += 1
 
@@ -663,6 +935,58 @@ class Orchestrator:
             experiment_debug_dir.mkdir(
                 parents=True,
                 exist_ok=True,
+            )
+
+            # ---------------------------------------------
+            # Log skills actually injected for this experiment
+            # ---------------------------------------------
+
+            self._append_jsonl(
+                path=(
+                    skill_trace_path
+                ),
+                payload={
+                    "timestamp": (
+                        datetime.now(
+                            timezone.utc
+                        )
+                        .isoformat()
+                    ),
+                    "iteration": (
+                        state.iteration
+                    ),
+                    "experiment_id": (
+                        experiment_id
+                    ),
+                    "action_type": (
+                        "experiment_skill_context"
+                    ),
+                    "loaded_skill_names": (
+                        list(
+                            loaded_skills
+                            .keys()
+                        )
+                    ),
+                    "loaded_skill_chars": {
+                        name: len(
+                            content
+                        )
+                        for (
+                            name,
+                            content,
+                        )
+                        in loaded_skills
+                        .items()
+                    },
+                    "budget_used": (
+                        len(
+                            loaded_skills
+                        )
+                    ),
+                    "budget_limit": (
+                        MAX_SKILLS_PER_ITERATION
+                    ),
+                },
             )
 
             # ---------------------------------------------
@@ -1420,6 +1744,64 @@ class Orchestrator:
         )
 
         return state
+
+    def _build_loaded_skills_context(
+        self,
+        loaded_skills: dict[
+            str,
+            str,
+        ],
+    ) -> str:
+        """
+        Build the full procedural context for only skills selected during
+        the current scientific iteration.
+        """
+
+        if not loaded_skills:
+
+            return ""
+
+        blocks = []
+
+        for (
+            skill_name,
+            skill_content,
+        ) in loaded_skills.items():
+
+            blocks.append(
+                (
+                    f"=== SKILL: "
+                    f"{skill_name} ===\n"
+                    f"{skill_content}"
+                )
+            )
+
+        return "\n\n".join(
+            blocks
+        )
+
+    def _append_jsonl(
+        self,
+        path: Path,
+        payload: dict,
+    ) -> None:
+        """
+        Append one structured trace event.
+        """
+
+        with path.open(
+            "a",
+            encoding="utf-8",
+        ) as file:
+
+            file.write(
+                json.dumps(
+                    payload,
+                    ensure_ascii=False,
+                    default=str,
+                )
+                + "\n"
+            )
 
     def _save_debug_artifact(
         self,

@@ -1,8 +1,8 @@
 """
-Description: Analyzes research memory, discovered research knowledge, and current-best code to choose the next autonomous research action.
+Description: Analyzes research memory, discovered research knowledge, skill metadata, and current-best code to choose the next autonomous research action.
 Owner: Charlton / David
-Input: Current-best code, validation score, research memory, research context, generic research skills, and information-action budget
-Output: ResearchAction requesting research, EDA, or one scientific ExperimentSpec
+Input: Current-best code, validation score, research memory, research context, skill catalog, loaded skills, and action budgets
+Output: ResearchAction requesting research, EDA, skill loading, or one scientific ExperimentSpec
 """
 
 from src.config import (
@@ -16,6 +16,7 @@ from src.schemas import (
     ResearchAction,
     ResearchProposal,
     ResearchRequest,
+    SkillRequest,
 )
 
 from src.prompts.researcher import (
@@ -47,39 +48,58 @@ class Researcher:
         current_best_primary: float,
         baseline_primary: float,
         research_context: str = "",
-        skills_context: str = "",
+        skill_catalog: str = "",
+        loaded_skills_context: str = "",
+        loaded_skill_names: list[str] | None = None,
+        skill_loads_used: int = 0,
+        skill_load_budget: int = 2,
         information_actions_used: int = 0,
         information_action_budget: int = 4,
     ) -> ResearchAction:
         """
-        Choose whether to gather more evidence or propose one experiment.
+        Choose whether to gather evidence, load procedural guidance,
+        or propose one experiment.
         """
 
-        prompt = build_researcher_prompt(
-            memory_context=(
-                memory_context
-            ),
-            current_best_code=(
-                current_best_code
-            ),
-            current_best_primary=(
-                current_best_primary
-            ),
-            baseline_primary=(
-                baseline_primary
-            ),
-            research_context=(
-                research_context
-            ),
-            skills_context=(
-                skills_context
-            ),
-            information_actions_used=(
-                information_actions_used
-            ),
-            information_action_budget=(
-                information_action_budget
-            ),
+        prompt = (
+            build_researcher_prompt(
+                memory_context=(
+                    memory_context
+                ),
+                current_best_code=(
+                    current_best_code
+                ),
+                current_best_primary=(
+                    current_best_primary
+                ),
+                baseline_primary=(
+                    baseline_primary
+                ),
+                research_context=(
+                    research_context
+                ),
+                skill_catalog=(
+                    skill_catalog
+                ),
+                loaded_skills_context=(
+                    loaded_skills_context
+                ),
+                loaded_skill_names=(
+                    loaded_skill_names
+                ),
+                skill_loads_used=(
+                    skill_loads_used
+                ),
+                skill_load_budget=(
+                    skill_load_budget
+                ),
+                information_actions_used=(
+                    information_actions_used
+                ),
+                information_action_budget=(
+                    information_action_budget
+                ),
+            )
         )
 
         proposal = (
@@ -88,8 +108,12 @@ class Researcher:
                 system_prompt=(
                     RESEARCHER_SYSTEM_PROMPT
                 ),
-                prompt=prompt,
-                model=RESEARCHER_MODEL,
+                prompt=(
+                    prompt
+                ),
+                model=(
+                    RESEARCHER_MODEL
+                ),
                 response_schema=(
                     ResearchProposal
                 ),
@@ -100,27 +124,15 @@ class Researcher:
             proposal.decision
         )
 
-        if (
-            information_actions_used
-            >= information_action_budget
-            and decision.action_type
-            != "experiment"
-        ):
-
-            raise ValueError(
-                "Researcher requested another "
-                "information-gathering action "
-                "after the information-action "
-                "budget was exhausted."
-            )
-
         if isinstance(
             decision,
             ResearchRequest,
         ):
 
             return ResearchAction(
-                action_type="research",
+                action_type=(
+                    "research"
+                ),
                 reason=(
                     decision.reason
                 ),
@@ -138,12 +150,31 @@ class Researcher:
         ):
 
             return ResearchAction(
-                action_type="eda",
+                action_type=(
+                    "eda"
+                ),
                 reason=(
                     decision.reason
                 ),
                 eda_tool=(
                     decision.eda_tool
+                ),
+            )
+
+        if isinstance(
+            decision,
+            SkillRequest,
+        ):
+
+            return ResearchAction(
+                action_type=(
+                    "load_skill"
+                ),
+                reason=(
+                    decision.reason
+                ),
+                skills=(
+                    decision.skills
                 ),
             )
 
@@ -157,30 +188,34 @@ class Researcher:
                 "decision type."
             )
 
-        spec = ExperimentSpec(
-            experiment_id=(
-                experiment_id
-            ),
-            hypothesis=(
-                decision.hypothesis
-            ),
-            rationale=(
-                decision.rationale
-            ),
-            change_type=(
-                decision.change_type
-            ),
-            parameters=(
-                decision.parameters
-            ),
-            implementation_instructions=(
-                decision
-                .implementation_instructions
-            ),
+        spec = (
+            ExperimentSpec(
+                experiment_id=(
+                    experiment_id
+                ),
+                hypothesis=(
+                    decision.hypothesis
+                ),
+                rationale=(
+                    decision.rationale
+                ),
+                change_type=(
+                    decision.change_type
+                ),
+                parameters=(
+                    decision.parameters
+                ),
+                implementation_instructions=(
+                    decision
+                    .implementation_instructions
+                ),
+            )
         )
 
         return ResearchAction(
-            action_type="experiment",
+            action_type=(
+                "experiment"
+            ),
             reason=(
                 decision.reason
             ),

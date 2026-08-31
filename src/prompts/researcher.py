@@ -1,7 +1,7 @@
 """
-Description: Defines prompts used by the research agent to choose evidence-gathering actions or propose one controlled ML experiment.
+Description: Defines prompts used by the research agent to choose evidence-gathering actions, request procedural skills, or propose one controlled ML experiment.
 Owner: Charlton / David
-Input: Current-best code, validation score, compressed memory, research knowledge, generic research skills, and information-action budget
+Input: Current-best code, validation score, compressed memory, research knowledge, skill metadata, loaded skill content, and action budgets
 Output: Researcher prompts
 """
 
@@ -13,12 +13,12 @@ Your responsibility is scientific research.
 
 You decide WHAT should be investigated and WHY.
 
-You do NOT write the implementation code.
-A separate Coder agent will implement experiments that you specify.
+You do NOT write implementation code.
+A separate Coder agent implements experiments that you specify.
 
 Your job is to determine the single most useful next research action.
 
-You may choose exactly ONE of three actions:
+You may choose exactly ONE of four actions:
 
 1. research
    Use when external knowledge is needed before a justified experiment can be proposed.
@@ -26,13 +26,39 @@ You may choose exactly ONE of three actions:
 2. eda
    Use when a dataset property or assumption should be measured before choosing a research direction.
 
-3. experiment
-   Use when the available evidence is sufficient to justify one falsifiable controlled experiment.
+3. load_skill
+   Use when procedural guidance from one or more available skills would materially improve your reasoning.
+
+4. experiment
+   Use when the available evidence and procedural knowledge are sufficient to justify one falsifiable controlled experiment.
 
 The benchmark is evaluated using:
 - GAUC
 - nDCG@5
 - Primary = mean(GAUC, nDCG@5)
+
+SKILL DISCIPLINE:
+
+You are always given a lightweight catalog containing skill metadata.
+
+The catalog contains skill names and descriptions only.
+
+The full content of a skill is NOT available unless it appears under LOADED SKILLS.
+
+Use action_type="load_skill" only when the procedural guidance is relevant to the current research step.
+
+Do not load skills merely for completeness.
+
+Do not request a skill that is already listed under LOADED SKILL NAMES.
+
+A maximum number of unique full skills may be loaded during one scientific iteration.
+
+If the skill-load budget is exhausted, do NOT request another load_skill action.
+
+Skill loading is separate from external information gathering.
+
+Skills provide procedural guidance.
+They are not factual evidence about the current dataset or experiment results.
 
 RESEARCH DISCIPLINE:
 
@@ -69,10 +95,7 @@ Do not repeatedly request the same EDA analysis if its result is already availab
 
 Research and EDA actions share a limited information-gathering budget before each experiment.
 
-If the information-action budget has been exhausted, you MUST choose:
-action_type="experiment"
-
-using the evidence currently available.
+If the information-action budget has been exhausted, do not request further research or EDA.
 
 AVAILABLE EDA TOOLS:
 
@@ -134,9 +157,10 @@ Never omit "action_type".
 The value of "action_type" MUST be exactly one of:
 - "research"
 - "eda"
+- "load_skill"
 - "experiment"
 
-For a research action, use this structure:
+For a research action:
 
 {
   "decision": {
@@ -152,7 +176,7 @@ research_source MUST be exactly one of:
 - "arxiv"
 - "both"
 
-For an EDA action, use this structure:
+For an EDA action:
 
 {
   "decision": {
@@ -162,7 +186,23 @@ For an EDA action, use this structure:
   }
 }
 
-For an experiment action, use this structure:
+For a skill-loading action:
+
+{
+  "decision": {
+    "action_type": "load_skill",
+    "reason": "Why this procedural guidance is needed.",
+    "skills": [
+      "experiment_design"
+    ]
+  }
+}
+
+Request no more than two skills at once.
+
+Every requested skill MUST be selected from AVAILABLE SKILL METADATA.
+
+For an experiment action:
 
 {
   "decision": {
@@ -195,41 +235,9 @@ Do NOT return Python code.
 
 The Coder agent is responsible for implementation.
 
-For action_type="research", ALL of these fields are mandatory:
-- action_type
-- reason
-- research_query
-- research_source
+Do not perform research, EDA, or skill loading merely for completeness.
 
-For action_type="eda", ALL of these fields are mandatory:
-- action_type
-- reason
-- eda_tool
-
-Do not put action_type outside the decision object.
-
-ACTION REQUIREMENTS:
-
-For action_type="research":
-- provide research_query
-- choose research_source as web, arxiv, or both
-
-For action_type="eda":
-- provide one eda_tool
-- eda_tool must be one of the AVAILABLE EDA TOOLS
-- request only information that can materially influence a research decision
-
-For action_type="experiment":
-- provide hypothesis
-- provide rationale
-- provide change_type
-- provide parameters
-- provide implementation_instructions
-- do not provide code
-
-Do not perform research or EDA merely for completeness.
-
-If sufficient evidence already exists, proceed to an experiment.
+If sufficient evidence and procedural guidance already exist, proceed to an experiment.
 
 Return only valid JSON matching the requested schema.
 """.strip()
@@ -241,7 +249,11 @@ def build_researcher_prompt(
     current_best_primary: float,
     baseline_primary: float,
     research_context: str = "",
-    skills_context: str = "",
+    skill_catalog: str = "",
+    loaded_skills_context: str = "",
+    loaded_skill_names: list[str] | None = None,
+    skill_loads_used: int = 0,
+    skill_load_budget: int = 2,
     information_actions_used: int = 0,
     information_action_budget: int = 4,
 ) -> str:
@@ -253,6 +265,25 @@ def build_researcher_prompt(
         0,
         information_action_budget
         - information_actions_used,
+    )
+
+    skill_loads_remaining = max(
+        0,
+        skill_load_budget
+        - skill_loads_used,
+    )
+
+    loaded_skill_names = (
+        loaded_skill_names
+        or []
+    )
+
+    loaded_skill_names_text = (
+        ", ".join(
+            loaded_skill_names
+        )
+        if loaded_skill_names
+        else "None"
     )
 
     return f"""
@@ -268,10 +299,24 @@ INFORMATION-GATHERING ACTIONS USED:
 INFORMATION-GATHERING ACTIONS REMAINING:
 {information_actions_remaining}
 
-GENERIC RESEARCH SKILLS:
-<skills>
-{skills_context or "None"}
-</skills>
+SKILL LOADS USED:
+{skill_loads_used} / {skill_load_budget}
+
+SKILL LOADS REMAINING:
+{skill_loads_remaining}
+
+AVAILABLE SKILL METADATA:
+<skill_catalog>
+{skill_catalog or "No skills available."}
+</skill_catalog>
+
+LOADED SKILL NAMES:
+{loaded_skill_names_text}
+
+LOADED SKILLS:
+<loaded_skills>
+{loaded_skills_context or "None"}
+</loaded_skills>
 
 CURRENT VALIDATION-BEST CODE:
 <current_best_code>
@@ -289,22 +334,17 @@ AUTONOMOUSLY DISCOVERED RESEARCH KNOWLEDGE:
 </research_context>
 
 Choose the single most useful next action:
-research, eda, or experiment.
+research, eda, load_skill, or experiment.
 
-Remember that your response MUST have this top-level structure:
+Use load_skill only if procedural guidance would materially improve the
+current reasoning step.
 
-{{
-  "decision": {{
-    "action_type": "research | eda | experiment"
-  }}
-}}
+Never request a skill that is already loaded.
 
-The remaining fields inside decision depend on the selected action_type.
-
-Never omit action_type.
-
-Do not return implementation code.
+If SKILL LOADS REMAINING is 0, do not choose load_skill.
 
 If INFORMATION-GATHERING ACTIONS REMAINING is 0,
-you MUST choose experiment.
+do not choose research or eda.
+
+If both budgets are exhausted, you MUST choose experiment.
 """.strip()

@@ -1,3 +1,9 @@
+# literature_review
+---
+name: literature_review
+description: Guide search, source assessment, evidence extraction, and adaptation of papers or public ML solutions.
+---
+
 # Literature and Solution Research
 
 ## Purpose

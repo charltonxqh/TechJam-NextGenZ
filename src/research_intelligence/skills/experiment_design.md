@@ -1,3 +1,9 @@
+# experiment_design
+---
+name: experiment_design
+description: Guide controlled falsifiable experiment design, candidate comparison, attribution, and efficient use of experiment budget.
+---
+
 # Controlled Experiment Design Skill
 
 ## Principles

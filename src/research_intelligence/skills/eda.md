@@ -1,3 +1,9 @@
+# eda
+---
+name: eda
+description: Guide autonomous dataset inspection, assumption testing, leakage checks, sparsity analysis, and metric-relevant EDA.
+---
+
 # Exploratory Data Analysis Skill
 
 ## Purpose
