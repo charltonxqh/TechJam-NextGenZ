@@ -9,6 +9,10 @@ from datetime import (
     datetime,
 )
 
+from pathlib import (
+    Path,
+)
+
 from src.agents.orchestrator import (
     Orchestrator,
 )
@@ -40,7 +44,8 @@ def main() -> None:
     # ---------------------------------------------
 
     run_id = (
-        datetime.now().strftime(
+        datetime.now()
+        .strftime(
             "run_%Y%m%d_%H%M%S"
         )
     )
@@ -48,6 +53,18 @@ def main() -> None:
     print(
         f"Run ID: "
         f"{run_id}"
+    )
+
+    run_dir = (
+        Path(
+            RUNS_DIR
+        )
+        / run_id
+    )
+
+    run_dir.mkdir(
+        parents=True,
+        exist_ok=True,
     )
 
     # ---------------------------------------------
@@ -59,7 +76,7 @@ def main() -> None:
     )
 
     # ---------------------------------------------
-    # Autonomous research agent
+    # Agent reasoning components
     # ---------------------------------------------
 
     researcher = (
@@ -73,16 +90,6 @@ def main() -> None:
     # ---------------------------------------------
     # Persistent research memory
     # ---------------------------------------------
-
-    run_dir = (
-        RUNS_DIR
-        / run_id
-    )
-
-    run_dir.mkdir(
-        parents=True,
-        exist_ok=True,
-    )
 
     memory_store = (
         MemoryStore(
@@ -135,7 +142,7 @@ def main() -> None:
     )
 
     if (
-        final_state.final_test_primary
+        final_state.final_test_gauc
         is not None
     ):
 
@@ -144,10 +151,20 @@ def main() -> None:
             f"{final_state.final_test_gauc:.4f}"
         )
 
+    if (
+        final_state.final_test_ndcg5
+        is not None
+    ):
+
         print(
             f"Final Test nDCG@5: "
             f"{final_state.final_test_ndcg5:.4f}"
         )
+
+    if (
+        final_state.final_test_primary
+        is not None
+    ):
 
         print(
             f"Final Test Primary: "
@@ -156,4 +173,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+
     main()

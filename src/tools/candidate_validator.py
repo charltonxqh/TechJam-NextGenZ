@@ -8,16 +8,45 @@ Output: CandidateValidationResult
 import ast
 import re
 
-from dataclasses import dataclass, field
+from dataclasses import (
+    dataclass,
+    field,
+)
+
+
+@dataclass
+class ValidationIssue:
+    code: str
+    message: str
+
+    line: int | None = None
+    column: int | None = None
+    snippet: str | None = None
 
 
 @dataclass
 class CandidateValidationResult:
     valid: bool
 
-    errors: list[str] = field(
+    issues: list[
+        ValidationIssue
+    ] = field(
         default_factory=list
     )
+
+    @property
+    def errors(
+        self,
+    ) -> list[str]:
+        """
+        Preserve compatibility with callers that expect an errors list.
+        """
+
+        return [
+            issue.message
+            for issue
+            in self.issues
+        ]
 
     def format_errors(
         self,
@@ -29,48 +58,81 @@ class CandidateValidationResult:
                 "Candidate validation passed."
             )
 
-        return "\n".join(
-            f"- {error}"
-            for error
-            in self.errors
+        formatted = []
+
+        for issue in self.issues:
+
+            location = ""
+
+            if issue.line is not None:
+
+                location = (
+                    f"Line "
+                    f"{issue.line}"
+                )
+
+                if (
+                    issue.column
+                    is not None
+                ):
+
+                    location += (
+                        f", column "
+                        f"{issue.column}"
+                    )
+
+                location += ":\n"
+
+            snippet = ""
+
+            if issue.snippet:
+
+                snippet = (
+                    f"    "
+                    f"{issue.snippet}\n"
+                )
+
+            formatted.append(
+                (
+                    f"[{issue.code}]\n"
+                    f"{location}"
+                    f"{snippet}"
+                    f"{issue.message}"
+                )
+            )
+
+        return "\n\n".join(
+            formatted
         )
 
 
 PLACEHOLDER_PATTERNS = [
     (
-        r"\.\.\.",
-        "Candidate contains an ellipsis placeholder (...).",
-    ),
-    (
-        r"for brevity",
+        r"\bfor brevity\b",
         "Candidate contains placeholder wording: 'for brevity'.",
     ),
     (
-        r"rest of (?:the )?(?:logic|code)",
+        r"\brest of (?:the )?(?:logic|code)\b",
         "Candidate refers to omitted 'rest of logic/code'.",
     ),
     (
-        r"same as current_best",
+        r"\bsame as current_best(?:_code)?\b",
         "Candidate refers to omitted current-best code instead of implementing it.",
     ),
     (
-        r"same as (?:the )?baseline",
+        r"\bsame as (?:the )?baseline\b",
         "Candidate refers to omitted baseline code instead of implementing it.",
     ),
     (
-        r"placeholder",
-        "Candidate contains placeholder implementation text.",
-    ),
-    (
-        r"implementation omitted",
+        r"\bimplementation omitted\b",
         "Candidate explicitly omits implementation.",
     ),
     (
-        r"backprop omitted",
+        r"\bbackprop(?:agation)? omitted\b",
         "Candidate explicitly omits backpropagation implementation.",
     ),
     (
-        r"to be implemented",
+        r"\bto be implemented\b",
         "Candidate contains unfinished implementation text.",
     ),
     (
@@ -105,90 +167,299 @@ REQUIRED_TEXT = {
 }
 
 
+def _get_line(
+    code_lines: list[str],
+    line_number: int | None,
+) -> str | None:
+
+    if line_number is None:
+
+        return None
+
+    index = (
+        line_number
+        - 1
+    )
+
+    if (
+        index < 0
+        or index
+        >= len(
+            code_lines
+        )
+    ):
+
+        return None
+
+    return (
+        code_lines[
+            index
+        ]
+        .strip()
+    )
+
+
 def _check_syntax(
     code: str,
-) -> list[str]:
+) -> tuple[
+    ast.AST | None,
+    list[
+        ValidationIssue
+    ],
+]:
 
     try:
 
-        tree = ast.parse(
-            code
+        tree = (
+            ast.parse(
+                code
+            )
         )
 
     except SyntaxError as error:
 
-        location = ""
+        code_lines = (
+            code.splitlines()
+        )
 
-        if error.lineno is not None:
+        return (
+            None,
+            [
+                ValidationIssue(
+                    code=(
+                        "SYNTAX_ERROR"
+                    ),
+                    message=(
+                        error.msg
+                    ),
+                    line=(
+                        error.lineno
+                    ),
+                    column=(
+                        error.offset
+                    ),
+                    snippet=(
+                        _get_line(
+                            code_lines,
+                            error.lineno,
+                        )
+                    ),
+                )
+            ],
+        )
 
-            location = (
-                f" at line "
-                f"{error.lineno}"
-            )
+    return (
+        tree,
+        [],
+    )
 
-        return [
-            (
-                "Python syntax error"
-                f"{location}: "
-                f"{error.msg}"
-            )
-        ]
 
-    errors = []
+def _check_ast_placeholders(
+    tree: ast.AST,
+    code: str,
+) -> list[
+    ValidationIssue
+]:
+
+    issues = []
+
+    code_lines = (
+        code.splitlines()
+    )
 
     for node in ast.walk(
         tree
     ):
 
-        if isinstance(
-            node,
-            ast.Pass,
+        if (
+            isinstance(
+                node,
+                ast.Expr,
+            )
+            and isinstance(
+                node.value,
+                ast.Constant,
+            )
+            and node.value.value
+            is Ellipsis
         ):
 
-            errors.append(
-                (
-                    "Candidate contains a bare "
-                    "'pass' statement, which may "
-                    "indicate incomplete generated code."
+            issues.append(
+                ValidationIssue(
+                    code=(
+                        "INCOMPLETE_CODE"
+                    ),
+                    message=(
+                        "Candidate contains an "
+                        "Ellipsis expression used "
+                        "as executable placeholder "
+                        "code."
+                    ),
+                    line=(
+                        getattr(
+                            node,
+                            "lineno",
+                            None,
+                        )
+                    ),
+                    column=(
+                        getattr(
+                            node,
+                            "col_offset",
+                            None,
+                        )
+                    ),
+                    snippet=(
+                        _get_line(
+                            code_lines,
+                            getattr(
+                                node,
+                                "lineno",
+                                None,
+                            ),
+                        )
+                    ),
                 )
             )
 
-    return errors
+    for node in ast.walk(
+        tree
+    ):
+
+        if not isinstance(
+            node,
+            (
+                ast.FunctionDef,
+                ast.AsyncFunctionDef,
+                ast.ClassDef,
+            ),
+        ):
+
+            continue
+
+        if (
+            len(
+                node.body
+            )
+            == 1
+            and isinstance(
+                node.body[0],
+                ast.Pass,
+            )
+        ):
+
+            pass_node = (
+                node.body[0]
+            )
+
+            issues.append(
+                ValidationIssue(
+                    code=(
+                        "INCOMPLETE_CODE"
+                    ),
+                    message=(
+                        "Candidate contains a "
+                        "function or class whose "
+                        "entire implementation is "
+                        "'pass'."
+                    ),
+                    line=(
+                        getattr(
+                            pass_node,
+                            "lineno",
+                            None,
+                        )
+                    ),
+                    column=(
+                        getattr(
+                            pass_node,
+                            "col_offset",
+                            None,
+                        )
+                    ),
+                    snippet=(
+                        _get_line(
+                            code_lines,
+                            getattr(
+                                pass_node,
+                                "lineno",
+                                None,
+                            ),
+                        )
+                    ),
+                )
+            )
+
+    return issues
 
 
-def _check_placeholders(
+def _check_placeholder_text(
     code: str,
-) -> list[str]:
+) -> list[
+    ValidationIssue
+]:
 
-    errors = []
+    issues = []
 
-    lowered = (
-        code.lower()
+    code_lines = (
+        code.splitlines()
     )
 
     for (
-        pattern,
-        message,
-    ) in PLACEHOLDER_PATTERNS:
+        line_number,
+        line,
+    ) in enumerate(
+        code_lines,
+        start=1,
+    ):
 
-        if re.search(
+        for (
             pattern,
-            lowered,
-            flags=re.IGNORECASE,
-        ):
+            message,
+        ) in PLACEHOLDER_PATTERNS:
 
-            errors.append(
-                message
+            match = re.search(
+                pattern,
+                line,
+                flags=(
+                    re.IGNORECASE
+                ),
             )
 
-    return errors
+            if not match:
+
+                continue
+
+            issues.append(
+                ValidationIssue(
+                    code=(
+                        "PLACEHOLDER_TEXT"
+                    ),
+                    message=(
+                        message
+                    ),
+                    line=(
+                        line_number
+                    ),
+                    column=(
+                        match.start()
+                    ),
+                    snippet=(
+                        line.strip()
+                    ),
+                )
+            )
+
+    return issues
 
 
 def _check_required_structure(
     code: str,
-) -> list[str]:
+) -> list[
+    ValidationIssue
+]:
 
-    errors = []
+    issues = []
 
     for (
         required_text,
@@ -200,11 +471,18 @@ def _check_required_structure(
             not in code
         ):
 
-            errors.append(
-                message
+            issues.append(
+                ValidationIssue(
+                    code=(
+                        "MISSING_STRUCTURE"
+                    ),
+                    message=(
+                        message
+                    ),
+                )
             )
 
-    return errors
+    return issues
 
 
 def validate_candidate(
@@ -217,46 +495,76 @@ def validate_candidate(
     It does not judge whether the scientific hypothesis is good.
     """
 
-    errors = []
+    issues = []
 
     if not (
         code
         and code.strip()
     ):
 
-        errors.append(
-            "Candidate code is empty."
+        issues.append(
+            ValidationIssue(
+                code=(
+                    "EMPTY_CODE"
+                ),
+                message=(
+                    "Candidate code is empty."
+                ),
+            )
         )
 
         return (
             CandidateValidationResult(
                 valid=False,
-                errors=errors,
+                issues=issues,
             )
         )
 
-    errors.extend(
+    tree, syntax_issues = (
         _check_syntax(
             code
         )
     )
 
-    errors.extend(
-        _check_placeholders(
+    issues.extend(
+        syntax_issues
+    )
+
+    if tree is not None:
+
+        issues.extend(
+            _check_ast_placeholders(
+                tree=(
+                    tree
+                ),
+                code=(
+                    code
+                ),
+            )
+        )
+
+    issues.extend(
+        _check_placeholder_text(
             code
         )
     )
 
-    errors.extend(
+    issues.extend(
         _check_required_structure(
             code
         )
     )
 
-    return CandidateValidationResult(
-        valid=(
-            len(errors)
-            == 0
-        ),
-        errors=errors,
+    return (
+        CandidateValidationResult(
+            valid=(
+                len(
+                    issues
+                )
+                == 0
+            ),
+            issues=(
+                issues
+            ),
+        )
     )

@@ -1,5 +1,5 @@
 """
-Description: Coordinates autonomous research actions, ML experiments, deterministic candidate validation and repair, diagnostics, decision policy, and persistent memory.
+Description: Coordinates autonomous research actions, coding, deterministic candidate validation and repair, ML experiments, diagnostics, decision policy, persistent memory, and debugging artifacts.
 Owner: Charlton / David
 Input: Research session configuration and system components
 Output: Completed research session and best experiment result
@@ -11,7 +11,13 @@ from dataclasses import (
     asdict,
 )
 
-from pathlib import Path
+from pathlib import (
+    Path,
+)
+
+from src.agents.coder import (
+    Coder,
+)
 
 from src.agents.decision import (
     decide_experiment,
@@ -26,8 +32,8 @@ from src.agents.researcher import (
 )
 
 from src.config import (
-    STARTER_KIT_DIR,
     DATA_DIR,
+    STARTER_KIT_DIR,
 )
 
 from src.memory.memory_store import (
@@ -97,12 +103,12 @@ from src.tools.final_evaluator import (
     run_final_test,
 )
 
-from src.tools.starterkit_runner import (
-    run_starterkit_baseline,
-)
-
 from src.tools.llm_client import (
     GeminiClient,
+)
+
+from src.tools.starterkit_runner import (
+    run_starterkit_baseline,
 )
 
 
@@ -127,6 +133,12 @@ class Orchestrator:
             memory_store
         )
 
+        self.coder = (
+            Coder(
+                GeminiClient()
+            )
+        )
+
     def run(
         self,
     ) -> RunState:
@@ -140,13 +152,26 @@ class Orchestrator:
             time.time()
         )
 
+        run_dir = (
+            Path(
+                self.memory.log_path
+            )
+            .parent
+        )
+
+        debug_dir = (
+            run_dir
+            / "debug"
+        )
+
+        debug_dir.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+
         # =====================================================
         # 0. Initialize research intelligence
         # =====================================================
-
-        run_dir = Path(
-            self.memory.log_path
-        ).parent
 
         knowledge_store = (
             ResearchKnowledgeStore(
@@ -189,6 +214,32 @@ class Orchestrator:
         )
 
         # =====================================================
+        # Load authoritative implementation context
+        # =====================================================
+
+        data_path = (
+            STARTER_KIT_DIR
+            / "data.py"
+        )
+
+        if data_path.exists():
+
+            data_context = (
+                data_path.read_text(
+                    encoding="utf-8"
+                )
+            )
+
+        else:
+
+            data_context = (
+                "data.py was not found. "
+                "Do not assume any data structure "
+                "that is not visible in "
+                "current_best_code."
+            )
+
+        # =====================================================
         # 1. Establish baseline
         # =====================================================
 
@@ -226,15 +277,20 @@ class Orchestrator:
 
         baseline_implemented_experiment = (
             ImplementedExperiment(
-                experiment_id="baseline",
+                experiment_id=(
+                    "baseline"
+                ),
                 workspace_path=str(
-                    STARTER_KIT_DIR.resolve()
+                    STARTER_KIT_DIR
+                    .resolve()
                 ),
                 command=[
                     "python",
                     "baseline.py",
                     "--data_dir",
-                    str(DATA_DIR),
+                    str(
+                        DATA_DIR
+                    ),
                     "--model",
                     "fm",
                     "--split",
@@ -244,7 +300,9 @@ class Orchestrator:
                     "python",
                     "baseline.py",
                     "--data_dir",
-                    str(DATA_DIR),
+                    str(
+                        DATA_DIR
+                    ),
                     "--model",
                     "fm",
                     "--split",
@@ -253,22 +311,26 @@ class Orchestrator:
                 full_code=(
                     baseline_code
                 ),
-                status="success",
+                status=(
+                    "success"
+                ),
             )
         )
 
-        state = RunState(
-            iteration=0,
-            best_experiment_id=(
-                baseline_result
-                .experiment_id
-            ),
-            best_primary=(
-                baseline_primary
-            ),
-            best_primary_history=[
-                baseline_primary
-            ],
+        state = (
+            RunState(
+                iteration=0,
+                best_experiment_id=(
+                    baseline_result
+                    .experiment_id
+                ),
+                best_primary=(
+                    baseline_primary
+                ),
+                best_primary_history=[
+                    baseline_primary
+                ],
+            )
         )
 
         # The full code from which the next experiment branches.
@@ -326,7 +388,9 @@ class Orchestrator:
                         "hypothesis."
                     ),
 
-                    stage="baseline",
+                    stage=(
+                        "baseline"
+                    ),
 
                     code_diff=(
                         stored_baseline_code
@@ -337,16 +401,21 @@ class Orchestrator:
                         "baseline implementation."
                     ),
 
-                    metrics=MemoryMetrics(
-                        gauc=(
-                            baseline_result.gauc
-                        ),
-                        ndcg5=(
-                            baseline_result.ndcg5
-                        ),
-                        primary=(
-                            baseline_result.primary
-                        ),
+                    metrics=(
+                        MemoryMetrics(
+                            gauc=(
+                                baseline_result
+                                .gauc
+                            ),
+                            ndcg5=(
+                                baseline_result
+                                .ndcg5
+                            ),
+                            primary=(
+                                baseline_result
+                                .primary
+                            ),
+                        )
                     ),
 
                     failure=(
@@ -534,13 +603,16 @@ class Orchestrator:
                             )
                         )
 
-                        knowledge_store.add_many(
-                            findings
+                        added = (
+                            knowledge_store
+                            .add_many(
+                                findings
+                            )
                         )
 
                         print(
                             f"EDA facts added: "
-                            f"{len(findings)}"
+                            f"{added}"
                         )
 
                     except Exception as error:
@@ -571,15 +643,11 @@ class Orchestrator:
                 action.spec
             )
 
-            if (
-                spec is None
-                or action.full_code
-                is None
-            ):
+            if spec is None:
 
                 raise RuntimeError(
                     "Experiment action did not "
-                    "contain a complete experiment."
+                    "contain an ExperimentSpec."
                 )
 
             print(
@@ -587,13 +655,50 @@ class Orchestrator:
                 f"{spec.hypothesis}"
             )
 
+            experiment_debug_dir = (
+                debug_dir
+                / experiment_id
+            )
+
+            experiment_debug_dir.mkdir(
+                parents=True,
+                exist_ok=True,
+            )
+
             # ---------------------------------------------
-            # Validate / repair / run candidate
+            # Coder implements researcher-specified experiment
             # ---------------------------------------------
 
             candidate_code = (
-                action.full_code
+                self.coder
+                .implement(
+                    spec=(
+                        spec
+                    ),
+                    current_best_code=(
+                        current_best_code
+                    ),
+                    data_context=(
+                        data_context
+                    ),
+                )
             )
+
+            self._save_debug_artifact(
+                directory=(
+                    experiment_debug_dir
+                ),
+                name=(
+                    "candidate_initial.py"
+                ),
+                content=(
+                    candidate_code
+                ),
+            )
+
+            # ---------------------------------------------
+            # Validate / repair / run candidate
+            # ---------------------------------------------
 
             repair_attempt = 0
 
@@ -611,7 +716,9 @@ class Orchestrator:
                     )
                 )
 
-                if not validation.valid:
+                if not (
+                    validation.valid
+                ):
 
                     validation_error = (
                         validation
@@ -619,12 +726,25 @@ class Orchestrator:
                     )
 
                     print(
-                        "Candidate validation "
+                        "\nCandidate validation "
                         "failed:"
                     )
 
                     print(
                         validation_error
+                    )
+
+                    self._save_debug_artifact(
+                        directory=(
+                            experiment_debug_dir
+                        ),
+                        name=(
+                            f"validation_error_"
+                            f"{repair_attempt:02d}.txt"
+                        ),
+                        content=(
+                            validation_error
+                        ),
                     )
 
                     if (
@@ -655,12 +775,11 @@ class Orchestrator:
                                 experiment_id=(
                                     experiment_id
                                 ),
-                                status="failed",
+                                status=(
+                                    "failed"
+                                ),
                                 error=(
                                     validation_error
-                                ),
-                                recovery_events=(
-                                    repair_events
                                 ),
                             )
                         )
@@ -676,13 +795,16 @@ class Orchestrator:
                     )
 
                     candidate_code = (
-                        self.researcher
-                        .repair_candidate(
+                        self.coder
+                        .repair(
                             spec=(
                                 spec
                             ),
                             current_best_code=(
                                 current_best_code
+                            ),
+                            data_context=(
+                                data_context
                             ),
                             candidate_code=(
                                 candidate_code
@@ -696,6 +818,19 @@ class Orchestrator:
                         )
                     )
 
+                    self._save_debug_artifact(
+                        directory=(
+                            experiment_debug_dir
+                        ),
+                        name=(
+                            f"candidate_repair_"
+                            f"{repair_attempt:02d}.py"
+                        ),
+                        content=(
+                            candidate_code
+                        ),
+                    )
+
                     repair_events.append(
                         RecoveryEvent(
                             stage=(
@@ -705,9 +840,9 @@ class Orchestrator:
                                 validation_error
                             ),
                             action=(
-                                "Researcher repaired "
-                                "the candidate within "
-                                "the same scientific "
+                                "Coder repaired the "
+                                "candidate within the "
+                                "same scientific "
                                 "iteration."
                             ),
                             success=True,
@@ -715,6 +850,10 @@ class Orchestrator:
                     )
 
                     continue
+
+                # -----------------------------------------
+                # Materialize validated candidate
+                # -----------------------------------------
 
                 implemented_experiment = (
                     build_candidate(
@@ -727,8 +866,14 @@ class Orchestrator:
                     )
                 )
 
-                result = run_experiment(
-                    implemented_experiment
+                # -----------------------------------------
+                # Execute validation experiment
+                # -----------------------------------------
+
+                result = (
+                    run_experiment(
+                        implemented_experiment
+                    )
                 )
 
                 if (
@@ -745,18 +890,11 @@ class Orchestrator:
                     )
                 )
 
-                if not technical_failure:
-
-                    break
-
-                if (
-                    repair_attempt
-                    >= MAX_CODE_REPAIR_ATTEMPTS
+                if not (
+                    technical_failure
                 ):
 
                     break
-
-                repair_attempt += 1
 
                 failure_text = (
                     result.error
@@ -769,20 +907,58 @@ class Orchestrator:
                 )
 
                 print(
+                    "\nImplementation failure:"
+                )
+
+                print(
+                    failure_text
+                )
+
+                self._save_debug_artifact(
+                    directory=(
+                        experiment_debug_dir
+                    ),
+                    name=(
+                        f"runtime_error_"
+                        f"{repair_attempt:02d}.txt"
+                    ),
+                    content=(
+                        failure_text
+                    ),
+                )
+
+                if (
+                    repair_attempt
+                    >= MAX_CODE_REPAIR_ATTEMPTS
+                ):
+
+                    break
+
+                repair_attempt += 1
+
+                print(
                     f"Experiment implementation "
                     f"failed. Automatic code "
-                    f"repair {repair_attempt}/"
+                    f"repair "
+                    f"{repair_attempt}/"
                     f"{MAX_CODE_REPAIR_ATTEMPTS}"
                 )
 
+                repair_events.extend(
+                    result.recovery_events
+                )
+
                 candidate_code = (
-                    self.researcher
-                    .repair_candidate(
+                    self.coder
+                    .repair(
                         spec=(
                             spec
                         ),
                         current_best_code=(
                             current_best_code
+                        ),
+                        data_context=(
+                            data_context
                         ),
                         candidate_code=(
                             candidate_code
@@ -796,8 +972,17 @@ class Orchestrator:
                     )
                 )
 
-                repair_events.extend(
-                    result.recovery_events
+                self._save_debug_artifact(
+                    directory=(
+                        experiment_debug_dir
+                    ),
+                    name=(
+                        f"candidate_repair_"
+                        f"{repair_attempt:02d}.py"
+                    ),
+                    content=(
+                        candidate_code
+                    ),
                 )
 
             if result is None:
@@ -834,7 +1019,9 @@ class Orchestrator:
 
             diagnostics = (
                 analyze_experiment(
-                    result=result,
+                    result=(
+                        result
+                    ),
                     previous_best_primary=(
                         previous_best_primary
                     ),
@@ -856,7 +1043,9 @@ class Orchestrator:
 
             decision = (
                 decide_experiment(
-                    result=result,
+                    result=(
+                        result
+                    ),
                     previous_best_primary=(
                         previous_best_primary
                     ),
@@ -906,6 +1095,8 @@ class Orchestrator:
                 improvement
             )
 
+            # Technical failures do not count as
+            # scientific no-improvement observations.
             if (
                 result.status
                 == "success"
@@ -921,8 +1112,15 @@ class Orchestrator:
 
             failure = (
                 self._classify_failure(
-                    result=result,
-                    decision=decision,
+                    result=(
+                        result
+                    ),
+                    decision=(
+                        decision
+                    ),
+                    repair_events=(
+                        repair_events
+                    ),
                 )
             )
 
@@ -948,87 +1146,97 @@ class Orchestrator:
             # Store iteration in memory
             # ---------------------------------------------
 
-            record = IterationRecord(
-                iteration=(
-                    state.iteration
-                ),
+            record = (
+                IterationRecord(
+                    iteration=(
+                        state.iteration
+                    ),
 
-                experiment_id=(
-                    spec.experiment_id
-                ),
+                    experiment_id=(
+                        spec.experiment_id
+                    ),
 
-                hypothesis=(
-                    spec.hypothesis
-                ),
+                    hypothesis=(
+                        spec.hypothesis
+                    ),
 
-                rationale=(
-                    spec.rationale
-                ),
+                    rationale=(
+                        spec.rationale
+                    ),
 
-                stage=(
-                    spec.change_type
-                ),
+                    stage=(
+                        spec.change_type
+                    ),
 
-                code_diff=(
-                    code_diff
-                ),
+                    code_diff=(
+                        code_diff
+                    ),
 
-                metrics=MemoryMetrics(
-                    gauc=result.gauc,
-                    ndcg5=result.ndcg5,
-                    primary=result.primary,
-                ),
-
-                failure=(
-                    failure
-                ),
-
-                error_message=(
-                    result.error
-                    or (
-                        implemented_experiment
-                        .error
-                        if (
-                            implemented_experiment
-                            is not None
+                    metrics=(
+                        MemoryMetrics(
+                            gauc=(
+                                result.gauc
+                            ),
+                            ndcg5=(
+                                result.ndcg5
+                            ),
+                            primary=(
+                                result.primary
+                            ),
                         )
-                        else None
-                    )
-                ),
+                    ),
 
-                manual_intervention=False,
+                    failure=(
+                        failure
+                    ),
 
-                resource_usage=(
-                    ResourceUsage(
-                        wall_clock_sec=(
-                            result
-                            .runtime_seconds
-                            or 0.0
-                        ),
-                    )
-                ),
+                    error_message=(
+                        result.error
+                        or (
+                            implemented_experiment
+                            .error
+                            if (
+                                implemented_experiment
+                                is not None
+                            )
+                            else None
+                        )
+                    ),
 
-                verdict=(
-                    decision
-                ),
+                    manual_intervention=False,
 
-                analysis=(
-                    diagnostic_text
-                ),
+                    resource_usage=(
+                        ResourceUsage(
+                            wall_clock_sec=(
+                                result
+                                .runtime_seconds
+                                or 0.0
+                            ),
+                        )
+                    ),
 
-                diagnostics=(
-                    asdict(
-                        diagnostics
-                    )
-                ),
+                    verdict=(
+                        decision
+                    ),
 
-                recovery_events=[
-                    asdict(
-                        event
-                    )
-                    for event
-                    in recovery_events
-                ],
+                    analysis=(
+                        diagnostic_text
+                    ),
+
+                    diagnostics=(
+                        asdict(
+                            diagnostics
+                        )
+                    ),
+
+                    recovery_events=[
+                        asdict(
+                            event
+                        )
+                        for event
+                        in recovery_events
+                    ],
+                )
             )
 
             self.memory.add(
@@ -1052,14 +1260,16 @@ class Orchestrator:
             # Check stopping policy
             # ---------------------------------------------
 
-            if should_stop(
-                iteration=(
-                    state.iteration
-                ),
-                best_primary_history=(
-                    state
-                    .best_primary_history
-                ),
+            if (
+                should_stop(
+                    iteration=(
+                        state.iteration
+                    ),
+                    best_primary_history=(
+                        state
+                        .best_primary_history
+                    ),
+                )
             ):
 
                 break
@@ -1153,32 +1363,26 @@ class Orchestrator:
                     f"{final_test_result.error}"
                 )
 
-        else:
-
-            print(
-                "\nBaseline remained the "
-                "best validation result. "
-                "No autonomous experiment "
-                "was selected for final "
-                "test evaluation."
-            )
-
         # =====================================================
         # 5. Export memory / run logs
         # =====================================================
 
-        log_path = Path(
-            self.memory.log_path
+        log_path = (
+            Path(
+                self.memory.log_path
+            )
         )
 
         markdown_path = (
-            log_path.with_suffix(
+            log_path
+            .with_suffix(
                 ".md"
             )
         )
 
         json_path = (
-            log_path.with_name(
+            log_path
+            .with_name(
                 "run_log_full.json"
             )
         )
@@ -1217,6 +1421,31 @@ class Orchestrator:
 
         return state
 
+    def _save_debug_artifact(
+        self,
+        directory: Path,
+        name: str,
+        content: str,
+    ) -> None:
+        """
+        Persist one debugging artifact immediately.
+        """
+
+        directory.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+
+        path = (
+            directory
+            / name
+        )
+
+        path.write_text(
+            content,
+            encoding="utf-8",
+        )
+
     def _is_repairable_failure(
         self,
         result: ExperimentResult,
@@ -1252,8 +1481,11 @@ class Orchestrator:
 
     def _classify_failure(
         self,
-        result,
+        result: ExperimentResult,
         decision: str,
+        repair_events: list[
+            RecoveryEvent
+        ],
     ) -> FailureType:
         """
         Map the factual experiment outcome into the memory failure taxonomy.
@@ -1297,7 +1529,10 @@ class Orchestrator:
         recovery_stages = {
             event.stage
             for event
-            in result.recovery_events
+            in (
+                repair_events
+                + result.recovery_events
+            )
         }
 
         if (

@@ -1,8 +1,8 @@
 """
-Description: Analyzes research memory, discovered research knowledge, and current-best code to choose the next autonomous research action and repair failed implementations.
+Description: Analyzes research memory, discovered research knowledge, and current-best code to choose the next autonomous research action.
 Owner: Charlton / David
-Input: Current-best code, validation score, research memory, research context, generic research skills, information-action budget, and candidate failures
-Output: ResearchAction requesting research, EDA, or one implemented experiment
+Input: Current-best code, validation score, research memory, research context, generic research skills, and information-action budget
+Output: ResearchAction requesting research, EDA, or one scientific ExperimentSpec
 """
 
 from src.config import (
@@ -19,9 +19,7 @@ from src.schemas import (
 )
 
 from src.prompts.researcher import (
-    REPAIR_SYSTEM_PROMPT,
     RESEARCHER_SYSTEM_PROMPT,
-    build_repair_prompt,
     build_researcher_prompt,
 )
 
@@ -54,7 +52,7 @@ class Researcher:
         information_action_budget: int = 4,
     ) -> ResearchAction:
         """
-        Choose whether to gather more evidence or run one experiment.
+        Choose whether to gather more evidence or propose one experiment.
         """
 
         prompt = build_researcher_prompt(
@@ -175,6 +173,10 @@ class Researcher:
             parameters=(
                 decision.parameters
             ),
+            implementation_instructions=(
+                decision
+                .implementation_instructions
+            ),
         )
 
         return ResearchAction(
@@ -185,65 +187,4 @@ class Researcher:
             spec=(
                 spec
             ),
-            full_code=(
-                decision.full_code
-            ),
-        )
-
-    def repair_candidate(
-        self,
-        spec: ExperimentSpec,
-        current_best_code: str,
-        candidate_code: str,
-        error: str,
-        repair_attempt: int,
-    ) -> str:
-        """
-        Repair the implementation of the current hypothesis without
-        changing the scientific experiment.
-        """
-
-        prompt = build_repair_prompt(
-            hypothesis=(
-                spec.hypothesis
-            ),
-            rationale=(
-                spec.rationale
-            ),
-            change_type=(
-                spec.change_type
-            ),
-            parameters=(
-                spec.parameters
-            ),
-            current_best_code=(
-                current_best_code
-            ),
-            candidate_code=(
-                candidate_code
-            ),
-            error=(
-                error
-            ),
-            repair_attempt=(
-                repair_attempt
-            ),
-        )
-
-        repaired = (
-            self.llm_client
-            .generate_structured(
-                system_prompt=(
-                    REPAIR_SYSTEM_PROMPT
-                ),
-                prompt=prompt,
-                model=RESEARCHER_MODEL,
-                response_schema=(
-                    ExperimentProposal
-                ),
-            )
-        )
-
-        return (
-            repaired.full_code
         )

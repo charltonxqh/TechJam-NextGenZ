@@ -55,6 +55,10 @@ class ExperimentSpec:
         default_factory=dict
     )
 
+    implementation_instructions: list[str] = field(
+        default_factory=list
+    )
+
 
 @dataclass
 class RecoveryEvent:
@@ -111,7 +115,7 @@ class RunSummary:
 @dataclass
 class ImplementedExperiment:
     """
-    Describes a runnable experiment produced by the Researcher.
+    Describes a runnable experiment produced by the coding agent.
     """
 
     experiment_id: str
@@ -279,7 +283,7 @@ class EDARequest(BaseModel):
 
 class ExperimentProposal(BaseModel):
     """
-    Proposes one complete controlled ML experiment.
+    Proposes one controlled ML experiment for the Coder to implement.
     """
 
     action_type: Literal[
@@ -320,19 +324,19 @@ class ExperimentProposal(BaseModel):
         str,
         Any,
     ] = Field(
-        default_factory=dict,
         description=(
             "Structured parameters describing "
             "the proposed experiment."
-        ),
+        )
     )
 
-    full_code: str = Field(
+    implementation_instructions: list[
+        str
+    ] = Field(
         description=(
-            "The COMPLETE resulting Python "
-            "experiment file after applying "
-            "the proposed change to the "
-            "current-best implementation."
+            "Concrete implementation constraints "
+            "that tell the Coder exactly how the "
+            "hypothesis should be implemented."
         )
     )
 
@@ -366,7 +370,6 @@ class ResearchAction:
     eda_tool: str | None = None
 
     spec: ExperimentSpec | None = None
-    full_code: str | None = None
 
 
 class ReflectionOutput(BaseModel):
