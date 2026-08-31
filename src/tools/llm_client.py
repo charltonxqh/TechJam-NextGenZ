@@ -5,10 +5,16 @@ Input: System prompt, user prompt, model name, and response schema
 Output: Parsed structured LLM response
 """
 
+import json
+
 from typing import Type, TypeVar
 
 from google import genai
-from pydantic import BaseModel
+
+from pydantic import (
+    BaseModel,
+    ValidationError,
+)
 
 from src.config import GEMINI_API_KEY
 
@@ -43,6 +49,12 @@ class GeminiClient:
         Generate and validate a structured Gemini response.
         """
 
+        schema_json = json.dumps(
+            response_schema.model_json_schema(),
+            indent=2,
+            ensure_ascii=False,
+        )
+
         combined_prompt = f"""
 SYSTEM INSTRUCTIONS:
 
@@ -51,6 +63,12 @@ SYSTEM INSTRUCTIONS:
 USER REQUEST:
 
 {prompt}
+
+REQUIRED JSON SCHEMA:
+
+{schema_json}
+
+Return ONLY one valid JSON object matching the schema above exactly.
 """.strip()
 
         interaction = (
@@ -60,9 +78,6 @@ USER REQUEST:
                 response_format={
                     "type": "text",
                     "mime_type": "application/json",
-                    "schema": (
-                        response_schema.model_json_schema()
-                    ),
                 },
             )
         )
@@ -72,8 +87,68 @@ USER REQUEST:
                 "Gemini returned an empty response."
             )
 
-        return (
-            response_schema.model_validate_json(
-                interaction.output_text
+        try:
+
+            return (
+                response_schema.model_validate_json(
+                    interaction.output_text
+                )
             )
-        )
+
+        except ValidationError as error:
+
+            repair_prompt = f"""
+SYSTEM INSTRUCTIONS:
+
+{system_prompt}
+
+The previous response failed local Pydantic schema validation.
+
+ORIGINAL USER REQUEST:
+
+{prompt}
+
+REQUIRED JSON SCHEMA:
+
+{schema_json}
+
+INVALID RESPONSE:
+
+{interaction.output_text}
+
+VALIDATION ERROR:
+
+{error}
+
+Correct the JSON so that it matches the required schema exactly.
+
+Preserve the intended substantive content.
+
+Do not omit required fields such as discriminator fields.
+
+Return ONLY the corrected JSON object.
+""".strip()
+
+            repair_interaction = (
+                self.client.interactions.create(
+                    model=model,
+                    input=repair_prompt,
+                    response_format={
+                        "type": "text",
+                        "mime_type": "application/json",
+                    },
+                )
+            )
+
+            if not repair_interaction.output_text:
+                raise ValueError(
+                    "Gemini returned an empty "
+                    "response while repairing "
+                    "structured output."
+                )
+
+            return (
+                response_schema.model_validate_json(
+                    repair_interaction.output_text
+                )
+            )

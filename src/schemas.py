@@ -2,11 +2,11 @@
 Description: Defines the shared data structures used for communication between system components.
 Owner: Shared
 Input: N/A
-Output: ResearchAction, ExperimentSpec, ImplementedExperiment, ExperimentResult, CommandResult, and diagnostics
+Output: Shared experiment, research-action, execution, diagnostics, and run-state schemas
 """
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal, Union
 
 from pydantic import BaseModel, Field
 
@@ -57,20 +57,6 @@ class ExperimentSpec:
 
 
 @dataclass
-class ResearchAction:
-    """
-    Stores one complete research decision produced by the Researcher.
-
-    The Researcher reasons from the current validation-best implementation
-    and returns the complete resulting candidate experiment code after
-    making one focused research change.
-    """
-
-    spec: ExperimentSpec
-    full_code: str
-
-
-@dataclass
 class RecoveryEvent:
     stage: str
     error: str
@@ -95,7 +81,9 @@ class IterationLog:
     status: str
     runtime_seconds: float | None
 
-    recovery_events: list[RecoveryEvent] = field(
+    recovery_events: list[
+        RecoveryEvent
+    ] = field(
         default_factory=list
     )
 
@@ -123,7 +111,7 @@ class RunSummary:
 @dataclass
 class ImplementedExperiment:
     """
-    Describes a runnable experiment produced from Researcher-generated code.
+    Describes a runnable experiment produced by the Researcher.
     """
 
     experiment_id: str
@@ -139,7 +127,11 @@ class ImplementedExperiment:
     status: str = "success"
     error: str | None = None
 
-    recovery_events: list[RecoveryEvent] = field(
+    code_diff: str = ""
+
+    recovery_events: list[
+        RecoveryEvent
+    ] = field(
         default_factory=list
     )
 
@@ -164,7 +156,9 @@ class ExperimentResult:
 
     error: str | None = None
 
-    recovery_events: list[RecoveryEvent] = field(
+    recovery_events: list[
+        RecoveryEvent
+    ] = field(
         default_factory=list
     )
 
@@ -172,7 +166,7 @@ class ExperimentResult:
 @dataclass
 class ExperimentDiagnostics:
     """
-    Stores deterministic factual diagnostics for one experiment.
+    Stores deterministic factual analysis of one experiment result.
     """
 
     experiment_id: str
@@ -202,29 +196,130 @@ class CommandResult:
     runtime_seconds: float
 
 
-class ResearchProposal(BaseModel):
+@dataclass
+class Reflection:
+    """
+    Stores the research agent's interpretation of an experiment result.
+    """
+
+    verdict: str
+    analysis: str
+    next_direction: str | None = None
+
+
+ResearchActionType = Literal[
+    "research",
+    "eda",
+    "experiment",
+]
+
+
+ResearchSource = Literal[
+    "web",
+    "arxiv",
+    "both",
+]
+
+
+class ResearchRequest(BaseModel):
+    """
+    Requests external research before deciding on an experiment.
+    """
+
+    action_type: Literal[
+        "research"
+    ] = "research"
+
+    reason: str = Field(
+        description=(
+            "Why external research is needed "
+            "before choosing the next experiment."
+        )
+    )
+
+    research_query: str = Field(
+        description=(
+            "Focused search query addressing "
+            "the current research knowledge gap."
+        )
+    )
+
+    research_source: ResearchSource = Field(
+        default="both",
+        description=(
+            "Whether to search the general web, "
+            "arXiv, or both."
+        ),
+    )
+
+
+class EDARequest(BaseModel):
+    """
+    Requests deterministic dataset analysis before deciding on an experiment.
+    """
+
+    action_type: Literal[
+        "eda"
+    ] = "eda"
+
+    reason: str = Field(
+        description=(
+            "Why this dataset property needs "
+            "to be measured."
+        )
+    )
+
+    eda_tool: str = Field(
+        description=(
+            "Name of the deterministic EDA "
+            "tool to execute."
+        )
+    )
+
+
+class ExperimentProposal(BaseModel):
+    """
+    Proposes one complete controlled ML experiment.
+    """
+
+    action_type: Literal[
+        "experiment"
+    ] = "experiment"
+
+    reason: str = Field(
+        description=(
+            "Why the currently available evidence "
+            "is sufficient to run this experiment."
+        )
+    )
 
     hypothesis: str = Field(
         description=(
-            "A clear and falsifiable ML research hypothesis."
+            "A clear and falsifiable ML "
+            "research hypothesis."
         )
     )
 
     rationale: str = Field(
         description=(
-            "Why this experiment is worth testing "
-            "based on available evidence."
+            "Why this experiment is justified "
+            "by the available dataset, research, "
+            "and experiment evidence."
         )
     )
 
     change_type: str = Field(
         description=(
-            "Short category such as loss, feature, model, "
-            "training, multi_task, temporal, or sequence."
+            "Short category such as loss, feature, "
+            "model, training, multi_task, temporal, "
+            "or sequence."
         )
     )
 
-    parameters: dict[str, Any] = Field(
+    parameters: dict[
+        str,
+        Any,
+    ] = Field(
         default_factory=dict,
         description=(
             "Structured parameters describing "
@@ -234,7 +329,63 @@ class ResearchProposal(BaseModel):
 
     full_code: str = Field(
         description=(
-            "The complete runnable Python experiment file after applying "
-            "exactly one focused research change to the current-best code."
+            "The COMPLETE resulting Python "
+            "experiment file after applying "
+            "the proposed change to the "
+            "current-best implementation."
         )
+    )
+
+
+class ResearchProposal(BaseModel):
+    """
+    Structured next-action decision produced by the Researcher.
+    """
+
+    decision: Union[
+        ResearchRequest,
+        EDARequest,
+        ExperimentProposal,
+    ] = Field(
+        discriminator="action_type"
+    )
+
+
+@dataclass
+class ResearchAction:
+    """
+    Internal representation of one Researcher decision.
+    """
+
+    action_type: ResearchActionType
+    reason: str
+
+    research_query: str | None = None
+    research_source: ResearchSource | None = None
+
+    eda_tool: str | None = None
+
+    spec: ExperimentSpec | None = None
+    full_code: str | None = None
+
+
+class ReflectionOutput(BaseModel):
+    verdict: Literal[
+        "keep",
+        "reject",
+        "retry",
+    ]
+
+    analysis: str = Field(
+        description=(
+            "What was learned from the experiment."
+        )
+    )
+
+    next_direction: str | None = Field(
+        default=None,
+        description=(
+            "A short research direction that "
+            "should inform the next experiment."
+        ),
     )

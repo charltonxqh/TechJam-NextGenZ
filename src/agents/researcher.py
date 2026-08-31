@@ -1,8 +1,8 @@
 """
-Description: Analyzes research memory and current-best code, then proposes and implements one next ML experiment.
+Description: Analyzes research memory, discovered research knowledge, and current-best code to choose the next autonomous research action and repair failed implementations.
 Owner: Charlton / David
-Input: Current-best code, validation score, research memory, and research context
-Output: ResearchAction containing ExperimentSpec and complete candidate code
+Input: Current-best code, validation score, research memory, research context, generic research skills, information-action budget, and candidate failures
+Output: ResearchAction requesting research, EDA, or one implemented experiment
 """
 
 from src.config import (
@@ -10,13 +10,18 @@ from src.config import (
 )
 
 from src.schemas import (
+    EDARequest,
+    ExperimentProposal,
     ExperimentSpec,
     ResearchAction,
     ResearchProposal,
+    ResearchRequest,
 )
 
 from src.prompts.researcher import (
+    REPAIR_SYSTEM_PROMPT,
     RESEARCHER_SYSTEM_PROMPT,
+    build_repair_prompt,
     build_researcher_prompt,
 )
 
@@ -44,10 +49,12 @@ class Researcher:
         current_best_primary: float,
         baseline_primary: float,
         research_context: str = "",
+        skills_context: str = "",
+        information_actions_used: int = 0,
+        information_action_budget: int = 4,
     ) -> ResearchAction:
         """
-        Generate one hypothesis together with the complete resulting
-        candidate experiment code.
+        Choose whether to gather more evidence or run one experiment.
         """
 
         prompt = build_researcher_prompt(
@@ -66,10 +73,20 @@ class Researcher:
             research_context=(
                 research_context
             ),
+            skills_context=(
+                skills_context
+            ),
+            information_actions_used=(
+                information_actions_used
+            ),
+            information_action_budget=(
+                information_action_budget
+            ),
         )
 
         proposal = (
-            self.llm_client.generate_structured(
+            self.llm_client
+            .generate_structured(
                 system_prompt=(
                     RESEARCHER_SYSTEM_PROMPT
                 ),
@@ -81,27 +98,152 @@ class Researcher:
             )
         )
 
+        decision = (
+            proposal.decision
+        )
+
+        if (
+            information_actions_used
+            >= information_action_budget
+            and decision.action_type
+            != "experiment"
+        ):
+
+            raise ValueError(
+                "Researcher requested another "
+                "information-gathering action "
+                "after the information-action "
+                "budget was exhausted."
+            )
+
+        if isinstance(
+            decision,
+            ResearchRequest,
+        ):
+
+            return ResearchAction(
+                action_type="research",
+                reason=(
+                    decision.reason
+                ),
+                research_query=(
+                    decision.research_query
+                ),
+                research_source=(
+                    decision.research_source
+                ),
+            )
+
+        if isinstance(
+            decision,
+            EDARequest,
+        ):
+
+            return ResearchAction(
+                action_type="eda",
+                reason=(
+                    decision.reason
+                ),
+                eda_tool=(
+                    decision.eda_tool
+                ),
+            )
+
+        if not isinstance(
+            decision,
+            ExperimentProposal,
+        ):
+
+            raise TypeError(
+                "Unsupported Researcher "
+                "decision type."
+            )
+
         spec = ExperimentSpec(
             experiment_id=(
                 experiment_id
             ),
             hypothesis=(
-                proposal.hypothesis
+                decision.hypothesis
             ),
             rationale=(
-                proposal.rationale
+                decision.rationale
             ),
             change_type=(
-                proposal.change_type
+                decision.change_type
             ),
             parameters=(
-                proposal.parameters
+                decision.parameters
             ),
         )
 
         return ResearchAction(
-            spec=spec,
-            full_code=(
-                proposal.full_code
+            action_type="experiment",
+            reason=(
+                decision.reason
             ),
+            spec=(
+                spec
+            ),
+            full_code=(
+                decision.full_code
+            ),
+        )
+
+    def repair_candidate(
+        self,
+        spec: ExperimentSpec,
+        current_best_code: str,
+        candidate_code: str,
+        error: str,
+        repair_attempt: int,
+    ) -> str:
+        """
+        Repair the implementation of the current hypothesis without
+        changing the scientific experiment.
+        """
+
+        prompt = build_repair_prompt(
+            hypothesis=(
+                spec.hypothesis
+            ),
+            rationale=(
+                spec.rationale
+            ),
+            change_type=(
+                spec.change_type
+            ),
+            parameters=(
+                spec.parameters
+            ),
+            current_best_code=(
+                current_best_code
+            ),
+            candidate_code=(
+                candidate_code
+            ),
+            error=(
+                error
+            ),
+            repair_attempt=(
+                repair_attempt
+            ),
+        )
+
+        repaired = (
+            self.llm_client
+            .generate_structured(
+                system_prompt=(
+                    REPAIR_SYSTEM_PROMPT
+                ),
+                prompt=prompt,
+                model=RESEARCHER_MODEL,
+                response_schema=(
+                    ExperimentProposal
+                ),
+            )
+        )
+
+        return (
+            repaired.full_code
         )

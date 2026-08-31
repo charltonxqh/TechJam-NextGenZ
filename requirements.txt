@@ -4,6 +4,6 @@ pydantic
 docker
 numpy
 beautifulsoup4
-duckduckgo_search
+ddgs
 lxml
 requests
