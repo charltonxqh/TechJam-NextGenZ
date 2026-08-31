@@ -3,3 +3,7 @@ google-genai
 pydantic
 docker
 numpy
+beautifulsoup4
+duckduckgo_search
+lxml
+requests
