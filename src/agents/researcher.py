@@ -1,7 +1,7 @@
 """
 Description: Analyzes research memory, discovered research knowledge, skill metadata, and current-best code to choose the next autonomous research action.
 Owner: Charlton / David
-Input: Current-best code, validation score, research memory, research context, skill catalog, loaded skills, and action budgets
+Input: Current-best code, validation score, research memory, research context, skill catalog, loaded skills, information-action state, research requirements, evidence-sufficiency state, and allowed actions
 Output: ResearchAction requesting research, EDA, skill loading, or one scientific ExperimentSpec
 """
 
@@ -51,10 +51,15 @@ class Researcher:
         skill_catalog: str = "",
         loaded_skills_context: str = "",
         loaded_skill_names: list[str] | None = None,
-        skill_loads_used: int = 0,
-        skill_load_budget: int = 2,
         information_actions_used: int = 0,
         information_action_budget: int = 4,
+        research_actions_this_iteration: int = 0,
+        require_external_research: bool = False,
+        research_requirement_reason: str = "",
+        allowed_actions: list[str] | None = None,
+        completed_eda_tools: list[str] | None = None,
+        attempted_research_queries: list[str] | None = None,
+        evidence_sufficiency_checkpoint: bool = False,
     ) -> ResearchAction:
         """
         Choose whether to gather evidence, load procedural guidance,
@@ -87,17 +92,32 @@ class Researcher:
                 loaded_skill_names=(
                     loaded_skill_names
                 ),
-                skill_loads_used=(
-                    skill_loads_used
-                ),
-                skill_load_budget=(
-                    skill_load_budget
-                ),
                 information_actions_used=(
                     information_actions_used
                 ),
                 information_action_budget=(
                     information_action_budget
+                ),
+                research_actions_this_iteration=(
+                    research_actions_this_iteration
+                ),
+                require_external_research=(
+                    require_external_research
+                ),
+                research_requirement_reason=(
+                    research_requirement_reason
+                ),
+                allowed_actions=(
+                    allowed_actions
+                ),
+                completed_eda_tools=(
+                    completed_eda_tools
+                ),
+                attempted_research_queries=(
+                    attempted_research_queries
+                ),
+                evidence_sufficiency_checkpoint=(
+                    evidence_sufficiency_checkpoint
                 ),
             )
         )
@@ -135,6 +155,9 @@ class Researcher:
                 ),
                 reason=(
                     decision.reason
+                ),
+                knowledge_gap=(
+                    decision.knowledge_gap
                 ),
                 research_query=(
                     decision.research_query

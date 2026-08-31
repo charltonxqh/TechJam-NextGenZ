@@ -113,6 +113,7 @@ class IterationLog:
     primary: float | None
 
     status: str
+
     runtime_seconds: (
         float
         | None
@@ -343,11 +344,21 @@ class ResearchRequest(
         )
     )
 
+    knowledge_gap: str = Field(
+        description=(
+            "The concrete unresolved "
+            "technical question that cannot "
+            "be answered from the currently "
+            "available EDA, research knowledge, "
+            "experiment memory, or loaded skills."
+        )
+    )
+
     research_query: str = Field(
         description=(
             "Focused search query "
-            "addressing the current "
-            "research knowledge gap."
+            "addressing the stated "
+            "knowledge gap."
         )
     )
 
@@ -410,9 +421,8 @@ class SkillRequest(
 
     skills: list[str] = Field(
         min_length=1,
-        max_length=2,
         description=(
-            "Names of one or two skills "
+            "Names of relevant skills "
             "selected from the available "
             "skill metadata catalog."
         ),
@@ -517,6 +527,11 @@ class ResearchAction:
     )
 
     reason: str
+
+    knowledge_gap: (
+        str
+        | None
+    ) = None
 
     research_query: (
         str

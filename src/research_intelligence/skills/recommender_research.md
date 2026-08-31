@@ -1,4 +1,3 @@
-# recommender_research
 ---
 name: recommender_research
 description: Guide recommender-system reasoning about ranking objectives, sparse feedback, auxiliary tasks, interaction modeling, and metric alignment.

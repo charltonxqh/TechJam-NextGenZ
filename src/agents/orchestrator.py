@@ -1,5 +1,5 @@
 """
-Description: Coordinates autonomous research actions, on-demand procedural skills, coding, deterministic candidate validation and repair, ML experiments, diagnostics, decision policy, persistent memory, and debugging artifacts.
+Description: Coordinates autonomous research actions, on-demand procedural skills, evidence-driven research, coding, deterministic candidate validation and research-integrity validation, semantic implementation verification, automatic repair, ML experiments, diagnostics, decision policy, persistent memory, and debugging artifacts.
 Owner: Charlton / David
 Input: Research session configuration and system components
 Output: Completed research session and best experiment result
@@ -27,6 +27,10 @@ from src.agents.coder import (
 
 from src.agents.decision import (
     decide_experiment,
+)
+
+from src.agents.implementation_verifier import (
+    ImplementationVerifier,
 )
 
 from src.agents.policy import (
@@ -115,6 +119,10 @@ from src.tools.llm_client import (
     GeminiClient,
 )
 
+from src.tools.research_integrity_validator import (
+    validate_research_integrity,
+)
+
 from src.tools.starterkit_runner import (
     run_starterkit_baseline,
 )
@@ -122,9 +130,11 @@ from src.tools.starterkit_runner import (
 
 INFORMATION_ACTION_BUDGET = 4
 
-MAX_SKILLS_PER_ITERATION = 2
+RESEARCH_REFRESH_AFTER_REJECTIONS = 2
 
 MAX_CODE_REPAIR_ATTEMPTS = 2
+
+MAX_ROUTING_CORRECTION_ATTEMPTS = 2
 
 
 class Orchestrator:
@@ -145,6 +155,12 @@ class Orchestrator:
 
         self.coder = (
             Coder(
+                GeminiClient()
+            )
+        )
+
+        self.implementation_verifier = (
+            ImplementationVerifier(
                 GeminiClient()
             )
         )
@@ -374,6 +390,17 @@ class Orchestrator:
             baseline_implemented_experiment
         )
 
+        # Tracks scientifically valid experiments that execute successfully
+        # but fail to improve the current validation best.
+        successful_non_improving_streak = 0
+
+        # Deterministic EDA tools operate on the same static dataset.
+        # Once one has successfully completed, rerunning it provides
+        # no new information during this research session.
+        completed_eda_tools: set[
+            str
+        ] = set()
+
         # -----------------------------------------------------
         # Store baseline as reference memory
         # -----------------------------------------------------
@@ -494,11 +521,58 @@ class Orchestrator:
 
             information_actions = 0
 
-            # Skills are scoped to one scientific iteration.
+            research_actions_this_iteration = 0
+
             loaded_skills: dict[
                 str,
                 str,
             ] = {}
+
+            attempted_research_queries: list[
+                str
+            ] = []
+
+            attempted_research_query_keys: set[
+                str
+            ] = set()
+
+            routing_correction_attempts = 0
+
+            require_external_research = (
+                next_iteration
+                == 1
+                or successful_non_improving_streak
+                >= RESEARCH_REFRESH_AFTER_REJECTIONS
+            )
+
+            if (
+                next_iteration
+                == 1
+            ):
+
+                research_requirement_reason = (
+                    "Fresh run: obtain external "
+                    "evidence before the first "
+                    "scientific experiment."
+                )
+
+            elif (
+                successful_non_improving_streak
+                >= RESEARCH_REFRESH_AFTER_REJECTIONS
+            ):
+
+                research_requirement_reason = (
+                    "The last "
+                    f"{successful_non_improving_streak} "
+                    "scientifically valid experiments "
+                    "did not improve the current best. "
+                    "Refresh external evidence before "
+                    "continuing."
+                )
+
+            else:
+
+                research_requirement_reason = ""
 
             while True:
 
@@ -520,6 +594,37 @@ class Orchestrator:
                 loaded_skills_context = (
                     self._build_loaded_skills_context(
                         loaded_skills
+                    )
+                )
+
+                research_required_now = (
+                    require_external_research
+                    and research_actions_this_iteration
+                    == 0
+                )
+
+                evidence_sufficiency_checkpoint = (
+                    (
+                        research_actions_this_iteration
+                        >= 1
+                        and bool(
+                            completed_eda_tools
+                        )
+                    )
+                    or (
+                        research_actions_this_iteration
+                        >= 2
+                    )
+                )
+
+                allowed_actions = (
+                    self._get_allowed_actions(
+                        information_actions=(
+                            information_actions
+                        ),
+                        research_required_now=(
+                            research_required_now
+                        ),
                     )
                 )
 
@@ -557,17 +662,32 @@ class Orchestrator:
                         loaded_skill_names=list(
                             loaded_skills.keys()
                         ),
-                        skill_loads_used=len(
-                            loaded_skills
-                        ),
-                        skill_load_budget=(
-                            MAX_SKILLS_PER_ITERATION
-                        ),
                         information_actions_used=(
                             information_actions
                         ),
                         information_action_budget=(
                             INFORMATION_ACTION_BUDGET
+                        ),
+                        research_actions_this_iteration=(
+                            research_actions_this_iteration
+                        ),
+                        require_external_research=(
+                            research_required_now
+                        ),
+                        research_requirement_reason=(
+                            research_requirement_reason
+                        ),
+                        allowed_actions=(
+                            allowed_actions
+                        ),
+                        completed_eda_tools=sorted(
+                            completed_eda_tools
+                        ),
+                        attempted_research_queries=(
+                            attempted_research_queries
+                        ),
+                        evidence_sufficiency_checkpoint=(
+                            evidence_sufficiency_checkpoint
                         ),
                     )
                 )
@@ -583,6 +703,65 @@ class Orchestrator:
                 )
 
                 # ---------------------------------------------
+                # Enforce currently allowed action types
+                # ---------------------------------------------
+
+                if (
+                    action.action_type
+                    not in allowed_actions
+                ):
+
+                    routing_correction_attempts += 1
+
+                    print(
+                        "Research action rejected: "
+                        f"'{action.action_type}' is "
+                        "not currently allowed."
+                    )
+
+                    print(
+                        "Allowed actions: "
+                        + ", ".join(
+                            allowed_actions
+                        )
+                    )
+
+                    if (
+                        routing_correction_attempts
+                        >= MAX_ROUTING_CORRECTION_ATTEMPTS
+                    ):
+
+                        if (
+                            "experiment"
+                            in allowed_actions
+                        ):
+
+                            print(
+                                "Routing correction: "
+                                "the Researcher should "
+                                "proceed to an experiment "
+                                "unless a valid available "
+                                "action is selected."
+                            )
+
+                        elif (
+                            "research"
+                            in allowed_actions
+                        ):
+
+                            print(
+                                "Routing correction: "
+                                "external research is "
+                                "currently required."
+                            )
+
+                        routing_correction_attempts = 0
+
+                    continue
+
+                routing_correction_attempts = 0
+
+                # ---------------------------------------------
                 # On-demand skill action
                 # ---------------------------------------------
 
@@ -596,19 +775,9 @@ class Orchestrator:
                         or []
                     )
 
-                    available_slots = max(
-                        0,
-                        MAX_SKILLS_PER_ITERATION
-                        - len(
-                            loaded_skills
-                        ),
-                    )
-
                     newly_loaded = []
 
                     already_loaded = []
-
-                    skipped_budget = []
 
                     failed_skills = []
 
@@ -620,14 +789,6 @@ class Orchestrator:
                         ):
 
                             already_loaded.append(
-                                skill_name
-                            )
-
-                            continue
-
-                        if available_slots <= 0:
-
-                            skipped_budget.append(
                                 skill_name
                             )
 
@@ -668,8 +829,6 @@ class Orchestrator:
                             skill_name
                         )
 
-                        available_slots -= 1
-
                     print(
                         "Skills requested: "
                         + (
@@ -692,10 +851,18 @@ class Orchestrator:
                         )
                     )
 
+                    if already_loaded:
+
+                        print(
+                            "Skills already loaded: "
+                            + ", ".join(
+                                already_loaded
+                            )
+                        )
+
                     print(
-                        f"Skill budget: "
-                        f"{len(loaded_skills)}/"
-                        f"{MAX_SKILLS_PER_ITERATION}"
+                        f"Loaded skills total: "
+                        f"{len(loaded_skills)}"
                     )
 
                     self._append_jsonl(
@@ -730,9 +897,6 @@ class Orchestrator:
                             "already_loaded": (
                                 already_loaded
                             ),
-                            "skipped_budget": (
-                                skipped_budget
-                            ),
                             "failed_skills": (
                                 failed_skills
                             ),
@@ -753,14 +917,6 @@ class Orchestrator:
                                 in loaded_skills
                                 .items()
                             },
-                            "budget_used": (
-                                len(
-                                    loaded_skills
-                                )
-                            ),
-                            "budget_limit": (
-                                MAX_SKILLS_PER_ITERATION
-                            ),
                         },
                     )
 
@@ -775,35 +931,96 @@ class Orchestrator:
                     == "research"
                 ):
 
+                    research_query = (
+                        action.research_query
+                        or ""
+                    ).strip()
+
+                    knowledge_gap = (
+                        action.knowledge_gap
+                        or ""
+                    ).strip()
+
+                    research_query_key = (
+                        self._normalize_research_query(
+                            research_query
+                        )
+                    )
+
                     if (
-                        information_actions
-                        >= INFORMATION_ACTION_BUDGET
+                        research_query_key
+                        in attempted_research_query_keys
                     ):
 
                         print(
                             "Research action skipped: "
-                            "information-action budget "
-                            "already exhausted."
-                        )
-
-                        information_actions = (
-                            INFORMATION_ACTION_BUDGET
+                            "this research query was "
+                            "already attempted during "
+                            "the current scientific "
+                            "iteration."
                         )
 
                         continue
 
-                    information_actions += 1
+                    if (
+                        evidence_sufficiency_checkpoint
+                        and not knowledge_gap
+                    ):
+
+                        print(
+                            "Research action skipped: "
+                            "the evidence-sufficiency "
+                            "checkpoint is active, but "
+                            "no concrete unresolved "
+                            "knowledge gap was provided."
+                        )
+
+                        continue
+
+                    if (
+                        evidence_sufficiency_checkpoint
+                        and self
+                        ._research_uses_budget_as_reason(
+                            reason=(
+                                action.reason
+                            ),
+                            knowledge_gap=(
+                                knowledge_gap
+                            ),
+                        )
+                    ):
+
+                        print(
+                            "Research action skipped: "
+                            "remaining information budget "
+                            "is not a valid reason for "
+                            "additional research."
+                        )
+
+                        continue
+
+                    attempted_research_query_keys.add(
+                        research_query_key
+                    )
+
+                    attempted_research_queries.append(
+                        research_query
+                    )
+
+                    print(
+                        f"Research knowledge gap: "
+                        f"{knowledge_gap}"
+                    )
 
                     print(
                         f"Research query: "
-                        f"{action.research_query}"
+                        f"{research_query}"
                     )
 
                     added = (
                         research_runner.run(
                             query=(
-                                action.research_query
-                                or ""
+                                research_query
                             ),
                             source=(
                                 action.research_source
@@ -817,14 +1034,25 @@ class Orchestrator:
                             ),
                             research_action_index=(
                                 information_actions
+                                + 1
                             ),
                         )
                     )
+
+                    information_actions += 1
+
+                    research_actions_this_iteration += 1
 
                     print(
                         f"Research evidence added: "
                         f"{added}"
                     )
+
+                    if (
+                        require_external_research
+                    ):
+
+                        successful_non_improving_streak = 0
 
                     continue
 
@@ -837,28 +1065,28 @@ class Orchestrator:
                     == "eda"
                 ):
 
+                    eda_tool = (
+                        action.eda_tool
+                        or ""
+                    )
+
                     if (
-                        information_actions
-                        >= INFORMATION_ACTION_BUDGET
+                        eda_tool
+                        in completed_eda_tools
                     ):
 
                         print(
-                            "EDA action skipped: "
-                            "information-action budget "
-                            "already exhausted."
-                        )
-
-                        information_actions = (
-                            INFORMATION_ACTION_BUDGET
+                            f"EDA action skipped: "
+                            f"'{eda_tool}' has already "
+                            "been completed during this "
+                            "research session."
                         )
 
                         continue
 
-                    information_actions += 1
-
                     print(
                         f"EDA request: "
-                        f"{action.eda_tool}"
+                        f"{eda_tool}"
                     )
 
                     try:
@@ -866,8 +1094,7 @@ class Orchestrator:
                         findings = (
                             run_eda_tool(
                                 name=(
-                                    action.eda_tool
-                                    or ""
+                                    eda_tool
                                 ),
                                 data_dir=(
                                     DATA_DIR
@@ -881,6 +1108,12 @@ class Orchestrator:
                                 findings
                             )
                         )
+
+                        completed_eda_tools.add(
+                            eda_tool
+                        )
+
+                        information_actions += 1
 
                         print(
                             f"EDA facts added: "
@@ -978,14 +1211,6 @@ class Orchestrator:
                         in loaded_skills
                         .items()
                     },
-                    "budget_used": (
-                        len(
-                            loaded_skills
-                        )
-                    ),
-                    "budget_limit": (
-                        MAX_SKILLS_PER_ITERATION
-                    ),
                 },
             )
 
@@ -1021,7 +1246,7 @@ class Orchestrator:
             )
 
             # ---------------------------------------------
-            # Validate / repair / run candidate
+            # Validate / integrity-check / verify / repair / run
             # ---------------------------------------------
 
             repair_attempt = 0
@@ -1033,6 +1258,10 @@ class Orchestrator:
             repair_events = []
 
             while True:
+
+                # -----------------------------------------
+                # Static candidate validation
+                # -----------------------------------------
 
                 validation = (
                     validate_candidate(
@@ -1174,6 +1403,331 @@ class Orchestrator:
                     )
 
                     continue
+
+                # -----------------------------------------
+                # Research-integrity validation
+                # -----------------------------------------
+
+                integrity_validation = (
+                    validate_research_integrity(
+                        candidate_code
+                    )
+                )
+
+                if not (
+                    integrity_validation.valid
+                ):
+
+                    integrity_error = (
+                        integrity_validation
+                        .format_errors()
+                    )
+
+                    print(
+                        "\nResearch integrity "
+                        "validation failed:"
+                    )
+
+                    print(
+                        integrity_error
+                    )
+
+                    self._save_debug_artifact(
+                        directory=(
+                            experiment_debug_dir
+                        ),
+                        name=(
+                            f"integrity_error_"
+                            f"{repair_attempt:02d}.txt"
+                        ),
+                        content=(
+                            integrity_error
+                        ),
+                    )
+
+                    if (
+                        repair_attempt
+                        >= MAX_CODE_REPAIR_ATTEMPTS
+                    ):
+
+                        repair_events.append(
+                            RecoveryEvent(
+                                stage=(
+                                    "research_integrity"
+                                ),
+                                error=(
+                                    integrity_error
+                                ),
+                                action=(
+                                    "Candidate was blocked "
+                                    "by the research-integrity "
+                                    "guard after exhausting "
+                                    "the automatic repair "
+                                    "budget."
+                                ),
+                                success=False,
+                            )
+                        )
+
+                        result = (
+                            ExperimentResult(
+                                experiment_id=(
+                                    experiment_id
+                                ),
+                                status=(
+                                    "failed"
+                                ),
+                                error=(
+                                    integrity_error
+                                ),
+                            )
+                        )
+
+                        break
+
+                    repair_attempt += 1
+
+                    print(
+                        f"Research-integrity repair "
+                        f"{repair_attempt}/"
+                        f"{MAX_CODE_REPAIR_ATTEMPTS}"
+                    )
+
+                    candidate_code = (
+                        self.coder
+                        .repair(
+                            spec=(
+                                spec
+                            ),
+                            current_best_code=(
+                                current_best_code
+                            ),
+                            data_context=(
+                                data_context
+                            ),
+                            candidate_code=(
+                                candidate_code
+                            ),
+                            error=(
+                                integrity_error
+                            ),
+                            repair_attempt=(
+                                repair_attempt
+                            ),
+                        )
+                    )
+
+                    self._save_debug_artifact(
+                        directory=(
+                            experiment_debug_dir
+                        ),
+                        name=(
+                            f"candidate_repair_"
+                            f"{repair_attempt:02d}.py"
+                        ),
+                        content=(
+                            candidate_code
+                        ),
+                    )
+
+                    repair_events.append(
+                        RecoveryEvent(
+                            stage=(
+                                "research_integrity"
+                            ),
+                            error=(
+                                integrity_error
+                            ),
+                            action=(
+                                "Coder repaired a "
+                                "research-integrity "
+                                "violation within the "
+                                "same scientific "
+                                "iteration."
+                            ),
+                            success=True,
+                        )
+                    )
+
+                    continue
+
+                # -----------------------------------------
+                # Researcher <-> Coder implementation verification
+                # -----------------------------------------
+
+                implementation_verification = (
+                    self.implementation_verifier
+                    .verify(
+                        spec=(
+                            spec
+                        ),
+                        current_best_code=(
+                            current_best_code
+                        ),
+                        candidate_code=(
+                            candidate_code
+                        ),
+                        data_context=(
+                            data_context
+                        ),
+                    )
+                )
+
+                if not (
+                    implementation_verification
+                    .faithful
+                ):
+
+                    verification_error = (
+                        self.implementation_verifier
+                        .format_failure(
+                            implementation_verification
+                        )
+                    )
+
+                    print(
+                        "\nImplementation "
+                        "verification failed:"
+                    )
+
+                    print(
+                        verification_error
+                    )
+
+                    self._save_debug_artifact(
+                        directory=(
+                            experiment_debug_dir
+                        ),
+                        name=(
+                            f"implementation_verification_"
+                            f"error_"
+                            f"{repair_attempt:02d}.txt"
+                        ),
+                        content=(
+                            verification_error
+                        ),
+                    )
+
+                    if (
+                        repair_attempt
+                        >= MAX_CODE_REPAIR_ATTEMPTS
+                    ):
+
+                        repair_events.append(
+                            RecoveryEvent(
+                                stage=(
+                                    "implementation_verification"
+                                ),
+                                error=(
+                                    verification_error
+                                ),
+                                action=(
+                                    "Candidate failed "
+                                    "Researcher-to-Coder "
+                                    "implementation fidelity "
+                                    "verification after "
+                                    "exhausting the automatic "
+                                    "repair budget."
+                                ),
+                                success=False,
+                            )
+                        )
+
+                        result = (
+                            ExperimentResult(
+                                experiment_id=(
+                                    experiment_id
+                                ),
+                                status=(
+                                    "failed"
+                                ),
+                                error=(
+                                    verification_error
+                                ),
+                            )
+                        )
+
+                        break
+
+                    repair_attempt += 1
+
+                    print(
+                        f"Implementation-fidelity "
+                        f"repair "
+                        f"{repair_attempt}/"
+                        f"{MAX_CODE_REPAIR_ATTEMPTS}"
+                    )
+
+                    candidate_code = (
+                        self.coder
+                        .repair(
+                            spec=(
+                                spec
+                            ),
+                            current_best_code=(
+                                current_best_code
+                            ),
+                            data_context=(
+                                data_context
+                            ),
+                            candidate_code=(
+                                candidate_code
+                            ),
+                            error=(
+                                verification_error
+                            ),
+                            repair_attempt=(
+                                repair_attempt
+                            ),
+                        )
+                    )
+
+                    self._save_debug_artifact(
+                        directory=(
+                            experiment_debug_dir
+                        ),
+                        name=(
+                            f"candidate_repair_"
+                            f"{repair_attempt:02d}.py"
+                        ),
+                        content=(
+                            candidate_code
+                        ),
+                    )
+
+                    repair_events.append(
+                        RecoveryEvent(
+                            stage=(
+                                "implementation_verification"
+                            ),
+                            error=(
+                                verification_error
+                            ),
+                            action=(
+                                "Coder repaired the "
+                                "candidate to better match "
+                                "the Researcher's fixed "
+                                "ExperimentSpec."
+                            ),
+                            success=True,
+                        )
+                    )
+
+                    continue
+
+                self._save_debug_artifact(
+                    directory=(
+                        experiment_debug_dir
+                    ),
+                    name=(
+                        "implementation_verification_"
+                        "passed.txt"
+                    ),
+                    content=(
+                        implementation_verification
+                        .summary
+                    ),
+                )
 
                 # -----------------------------------------
                 # Materialize validated candidate
@@ -1419,7 +1973,7 @@ class Orchestrator:
                 improvement
             )
 
-            # Technical failures do not count as
+            # Technical/integrity/fidelity failures do not count as
             # scientific no-improvement observations.
             if (
                 result.status
@@ -1429,6 +1983,17 @@ class Orchestrator:
                 state.best_primary_history.append(
                     state.best_primary
                 )
+
+                if (
+                    decision
+                    == "keep"
+                ):
+
+                    successful_non_improving_streak = 0
+
+                else:
+
+                    successful_non_improving_streak += 1
 
             # ---------------------------------------------
             # Failure classification
@@ -1745,6 +2310,109 @@ class Orchestrator:
 
         return state
 
+    def _get_allowed_actions(
+        self,
+        information_actions: int,
+        research_required_now: bool,
+    ) -> list[str]:
+        """
+        Determine which Researcher actions are currently legal.
+        """
+
+        if research_required_now:
+
+            return [
+                "research"
+            ]
+
+        if (
+            information_actions
+            >= INFORMATION_ACTION_BUDGET
+        ):
+
+            return [
+                "load_skill",
+                "experiment",
+            ]
+
+        return [
+            "load_skill",
+            "experiment",
+            "research",
+            "eda",
+        ]
+
+    def _normalize_research_query(
+        self,
+        query: str,
+    ) -> str:
+        """
+        Normalize one research query for deterministic duplicate detection.
+        """
+
+        return " ".join(
+            query.lower()
+            .split()
+        )
+
+    def _research_uses_budget_as_reason(
+        self,
+        reason: str,
+        knowledge_gap: str,
+    ) -> bool:
+        """
+        Detect research requests whose stated justification is merely the
+        existence of unused information budget rather than a technical gap.
+        """
+
+        reason_text = (
+            reason.lower()
+        )
+
+        gap_text = (
+            knowledge_gap.lower()
+        )
+
+        budget_phrases = [
+            "remaining information-gathering budget",
+            "remaining information gathering budget",
+            "remaining research budget",
+            "remaining budget",
+            "budget remaining",
+            "still have budget",
+            "have remaining budget",
+        ]
+
+        generic_gap_phrases = [
+            "more evidence",
+            "more research",
+            "more information",
+            "effective architectures",
+            "effective model architectures",
+            "state-of-the-art methods",
+            "state of the art methods",
+            "better recommendation methods",
+            "better recommender models",
+        ]
+
+        reason_uses_budget = any(
+            phrase in reason_text
+            for phrase
+            in budget_phrases
+        )
+
+        gap_is_generic = any(
+            gap_text.strip()
+            == phrase
+            for phrase
+            in generic_gap_phrases
+        )
+
+        return (
+            reason_uses_budget
+            or gap_is_generic
+        )
+
     def _build_loaded_skills_context(
         self,
         loaded_skills: dict[
@@ -1919,6 +2587,24 @@ class Orchestrator:
 
         if (
             "candidate_validation"
+            in recovery_stages
+        ):
+
+            return (
+                FailureType.CODE_ERROR
+            )
+
+        if (
+            "research_integrity"
+            in recovery_stages
+        ):
+
+            return (
+                FailureType.CODE_ERROR
+            )
+
+        if (
+            "implementation_verification"
             in recovery_stages
         ):
 

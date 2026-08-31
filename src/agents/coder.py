@@ -6,7 +6,7 @@ Output: Complete candidate Python source code
 """
 
 from src.config import (
-    RESEARCHER_MODEL,
+    CODER_MODEL,
 )
 
 from src.prompts.coder import (
@@ -86,7 +86,7 @@ class Coder:
                     prompt
                 ),
                 model=(
-                    RESEARCHER_MODEL
+                    CODER_MODEL
                 ),
             )
         )
@@ -159,7 +159,7 @@ class Coder:
                     prompt
                 ),
                 model=(
-                    RESEARCHER_MODEL
+                    CODER_MODEL
                 ),
             )
         )
