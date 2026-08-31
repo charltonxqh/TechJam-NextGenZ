@@ -1,8 +1,8 @@
 """
-Description: Enforces deterministic rules for deciding whether the autonomous research process should continue, retry, or stop.
+Description: Enforces deterministic rules for deciding whether the autonomous research process should continue or stop.
 Owner: Charlton / David
-Input: Current research state and experiment history
-Output: Continue, retry, or stop decision
+Input: Current research state and best validation Primary history
+Output: Continue or stop decision
 """
 
 from src.config import (
@@ -12,36 +12,68 @@ from src.config import (
 )
 
 
-def has_reached_iteration_limit(iteration: int) -> bool:
-    return iteration >= MAX_ITERATIONS
+def has_reached_iteration_limit(
+    iteration: int,
+) -> bool:
+
+    return (
+        iteration
+        >= MAX_ITERATIONS
+    )
 
 
-def has_converged(improvements: list[float]) -> bool:
+def has_converged(
+    best_primary_history: list[float],
+) -> bool:
     """
-    Converged when the last N research iterations each improved
-    validation Primary by no more than epsilon.
+    Converged when the validation-best Primary improves by no more
+    than epsilon across the most recent N autonomous iterations.
+
+    The history includes the baseline/reference score immediately
+    before those N iterations.
     """
 
-    if len(improvements) < CONVERGENCE_PATIENCE:
+    required_scores = (
+        CONVERGENCE_PATIENCE
+        + 1
+    )
+
+    if (
+        len(best_primary_history)
+        < required_scores
+    ):
         return False
 
-    recent = improvements[-CONVERGENCE_PATIENCE:]
+    window = (
+        best_primary_history[
+            -required_scores:
+        ]
+    )
 
-    return all(
-        improvement <= CONVERGENCE_EPSILON
-        for improvement in recent
+    window_gain = (
+        window[-1]
+        - window[0]
+    )
+
+    return (
+        window_gain
+        <= CONVERGENCE_EPSILON
     )
 
 
 def should_stop(
     iteration: int,
-    improvements: list[float],
+    best_primary_history: list[float],
 ) -> bool:
 
-    if has_reached_iteration_limit(iteration):
+    if has_reached_iteration_limit(
+        iteration
+    ):
         return True
 
-    if has_converged(improvements):
+    if has_converged(
+        best_primary_history
+    ):
         return True
 
     return False

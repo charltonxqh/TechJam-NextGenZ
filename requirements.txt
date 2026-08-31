@@ -1,0 +1,5 @@
+python-dotenv
+google-genai
+pydantic
+docker
+numpy

@@ -38,7 +38,7 @@ WORKSPACES_DIR = (
 # Research Loop
 # =========================
 
-MAX_ITERATIONS = 50
+MAX_ITERATIONS = 5
 
 CONVERGENCE_EPSILON = 0.002
 CONVERGENCE_PATIENCE = 3
@@ -55,10 +55,10 @@ GEMINI_API_KEY = os.getenv(
     ""
 )
 
-RESEARCHER_MODEL = "gemini-3.1-pro"
+RESEARCHER_MODEL = "gemini-3.1-flash-lite"
 
-REFLECTOR_MODEL = "gemini-3.7-flash"
+REFLECTOR_MODEL = "gemini-3.1-flash-lite"
 
-DEFAULT_MODEL = "gemini-3.7-flash"
+DEFAULT_MODEL = "gemini-3.1-flash-lite"
 
-LIGHT_MODEL = "gemini-3.5-flash-lite"
+LIGHT_MODEL = "gemini-3.1-flash-lite"

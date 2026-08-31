@@ -1,23 +1,28 @@
 """
-Description: Analyzes previous research and proposes the next ML hypothesis and experiment to investigate.
+Description: Analyzes research memory and current-best code, then proposes and implements one next ML experiment.
 Owner: Charlton / David
-Input: Research state, experiment history, and available research context
-Output: ExperimentSpec
+Input: Current-best code, validation score, research memory, and research context
+Output: ResearchAction containing ExperimentSpec and complete candidate code
 """
 
-from dataclasses import asdict
+from src.config import (
+    RESEARCHER_MODEL,
+)
 
-from src.config import RESEARCHER_MODEL
 from src.schemas import (
-    ExperimentResult,
     ExperimentSpec,
+    ResearchAction,
     ResearchProposal,
 )
+
 from src.prompts.researcher import (
     RESEARCHER_SYSTEM_PROMPT,
     build_researcher_prompt,
 )
-from src.tools.llm_client import GeminiClient
+
+from src.tools.llm_client import (
+    GeminiClient,
+)
 
 
 class Researcher:
@@ -26,38 +31,77 @@ class Researcher:
         self,
         llm_client: GeminiClient,
     ) -> None:
-        self.llm_client = llm_client
+
+        self.llm_client = (
+            llm_client
+        )
 
     def propose(
         self,
         experiment_id: str,
-        baseline_result: ExperimentResult,
-        history: list[dict],
+        memory_context: str,
+        current_best_code: str,
+        current_best_primary: float,
+        baseline_primary: float,
         research_context: str = "",
-    ) -> ExperimentSpec:
+    ) -> ResearchAction:
         """
-        Generate one next research hypothesis.
+        Generate one hypothesis together with the complete resulting
+        candidate experiment code.
         """
 
         prompt = build_researcher_prompt(
-            baseline_result=asdict(
-                baseline_result
+            memory_context=(
+                memory_context
             ),
-            history=history,
-            research_context=research_context,
+            current_best_code=(
+                current_best_code
+            ),
+            current_best_primary=(
+                current_best_primary
+            ),
+            baseline_primary=(
+                baseline_primary
+            ),
+            research_context=(
+                research_context
+            ),
         )
 
-        proposal = self.llm_client.generate_structured(
-            system_prompt=RESEARCHER_SYSTEM_PROMPT,
-            prompt=prompt,
-            model=RESEARCHER_MODEL,
-            response_schema=ResearchProposal,
+        proposal = (
+            self.llm_client.generate_structured(
+                system_prompt=(
+                    RESEARCHER_SYSTEM_PROMPT
+                ),
+                prompt=prompt,
+                model=RESEARCHER_MODEL,
+                response_schema=(
+                    ResearchProposal
+                ),
+            )
         )
 
-        return ExperimentSpec(
-            experiment_id=experiment_id,
-            hypothesis=proposal.hypothesis,
-            rationale=proposal.rationale,
-            change_type=proposal.change_type,
-            parameters=proposal.parameters,
+        spec = ExperimentSpec(
+            experiment_id=(
+                experiment_id
+            ),
+            hypothesis=(
+                proposal.hypothesis
+            ),
+            rationale=(
+                proposal.rationale
+            ),
+            change_type=(
+                proposal.change_type
+            ),
+            parameters=(
+                proposal.parameters
+            ),
+        )
+
+        return ResearchAction(
+            spec=spec,
+            full_code=(
+                proposal.full_code
+            ),
         )

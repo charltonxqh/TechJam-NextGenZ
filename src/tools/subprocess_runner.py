@@ -16,6 +16,7 @@ def run_command(
     command: list[str],
     cwd: str | Path | None = None,
     timeout: int | None = None,
+    env: dict[str, str] | None = None,
 ) -> CommandResult:
     """
     Execute one terminal command and return its result.
@@ -31,6 +32,7 @@ def run_command(
             text=True,
             timeout=timeout,
             check=False,
+            env=env,
         )
 
         runtime = time.time() - start_time
@@ -48,7 +50,10 @@ def run_command(
         return CommandResult(
             return_code=124,
             stdout=error.stdout or "",
-            stderr=(error.stderr or "") + "\nCommand timed out.",
+            stderr=(
+                (error.stderr or "")
+                + "\nCommand timed out."
+            ),
             runtime_seconds=runtime,
         )
 

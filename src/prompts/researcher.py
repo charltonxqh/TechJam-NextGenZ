@@ -1,86 +1,89 @@
 """
-Description: Defines prompts used by the research agent to generate ML hypotheses and experiments.
+Description: Defines prompts used by the research agent to analyze prior evidence, propose one ML hypothesis, and produce the resulting candidate code.
 Owner: Charlton / David
-Input: Baseline results, experiment history, and research context
+Input: Current-best code, validation score, compressed memory, and research context
 Output: Researcher prompts
 """
-
-import json
 
 
 RESEARCHER_SYSTEM_PROMPT = """
 You are an autonomous machine learning researcher working on a recommender-system benchmark.
 
-Your goal is to propose one technically meaningful experiment that can improve validation performance.
+Your task combines three responsibilities:
+
+1. Study the factual evidence from previous experiments.
+2. Propose ONE technically meaningful next experiment.
+3. Implement that experiment by returning the COMPLETE resulting Python experiment file.
 
 The benchmark is evaluated using:
 - GAUC
 - nDCG@5
 - Primary = mean(GAUC, nDCG@5)
 
-You must reason from previous experiment results and avoid repeating failed ideas without a clear justification.
+IMPORTANT SEARCH PRINCIPLE:
+
+The supplied current_best_code is the validation-best implementation found so far.
+
+Your new candidate MUST start conceptually from that code.
+
+Make ONE focused, atomic research change relative to the current-best implementation.
+Do not accumulate rejected changes from previous experiments.
+
+The complete code you return is the resulting candidate after applying that one change.
+
+The BASELINE REFERENCE in memory is only the official starting benchmark.
+It is NOT a previous research hypothesis.
+
+Previous experiment diagnostics are factual evidence.
+Use them to reason about:
+- what improved
+- what regressed
+- what failed technically
+- which ideas should not simply be repeated
 
 Do not modify:
-- the official evaluation logic
-- the official train/validation split
-- the hidden test set
+- evaluate.py
+- the official date-based data split
+- the definition of GAUC
+- the definition of nDCG@5
+- the hidden-test protocol
+
+Research decisions must use validation information only.
 
 Return only valid JSON matching the requested schema.
 """.strip()
 
 
 def build_researcher_prompt(
-    baseline_result,
-    history: list[dict],
+    memory_context: str,
+    current_best_code: str,
+    current_best_primary: float,
+    baseline_primary: float,
     research_context: str = "",
 ) -> str:
     """
-    Build the user prompt for proposing the next experiment.
+    Build the user prompt for proposing and implementing the next experiment.
     """
 
-    baseline_json = json.dumps(
-        baseline_result,
-        indent=2,
-        ensure_ascii=False,
-        default=str,
-    )
-
-    history_json = json.dumps(
-        history,
-        indent=2,
-        ensure_ascii=False,
-        default=str,
-    )
-
     return f"""
-Current baseline / best reference:
-{baseline_json}
+CURRENT VALIDATION-BEST PRIMARY:
+{current_best_primary:.6f}
 
-Previous experiments:
-{history_json}
+OFFICIAL BASELINE VALIDATION PRIMARY:
+{baseline_primary:.6f}
 
-Additional research context:
+CURRENT VALIDATION-BEST CODE:
+<current_best_code>
+{current_best_code}
+</current_best_code>
+
+RESEARCH MEMORY:
+<research_memory>
+{memory_context}
+</research_memory>
+
+ADDITIONAL RESEARCH CONTEXT:
+<research_context>
 {research_context or "None"}
-
-Propose exactly ONE next experiment.
-
-Return valid JSON in exactly this structure:
-
-{{
-  "hypothesis": "A clear, testable hypothesis.",
-  "rationale": "Why this experiment is worth testing based on previous evidence.",
-  "change_type": "A short category such as loss, feature, model, training, multi_task, temporal, or sequence.",
-  "parameters": {{
-    "key": "value"
-  }}
-}}
-
-Requirements:
-- Propose only one experiment.
-- The hypothesis must be falsifiable.
-- Use previous experiment results as evidence.
-- Do not repeat an already-tested experiment unless there is a concrete reason.
-- Prefer changes that can be implemented and evaluated within the experiment budget.
-- Do not use hidden-test information.
-- Do not change the official evaluation implementation.
+</research_context>
 """.strip()
