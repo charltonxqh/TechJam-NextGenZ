@@ -115,6 +115,11 @@ python src/engine/finalize.py
 python kuairand-starter-kit/submit.py --check deliverables/submitted-run/submission_draft.csv
 ```
 
+The per-iteration log for the submitted run — hypothesis, code diff, metrics and
+recovery events for all twelve iterations — is
+[`deliverables/ITERATION-LOG.md`](deliverables/ITERATION-LOG.md).
+`deliverables/README.md` indexes everything else.
+
 ### Results
 
 KuaiRand-Pure. Artefacts in `deliverables/submitted-run/`.
