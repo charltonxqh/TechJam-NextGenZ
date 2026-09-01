@@ -75,6 +75,52 @@ Each experiment stores its hypothesis, rationale, research direction, code diff,
 
 ---
 
+## Repository Layout
+
+```text
+main.py                     entry point for the autonomous research loop
+src/
+├── agents/                 orchestrator, researcher, policy, decision
+├── research_intelligence/  online research, EDA, on-demand skills, knowledge store
+├── tools/                  experiment runner, candidate + integrity validators, metrics
+├── memory/                 experiment memory and compressed context
+├── engine/                 tree-search research engine (second track, see below)
+│   ├── evidence/           standalone scripts behind the measurements in docs/
+│   └── state/              live run state (git-ignored)
+├── config.py               paths, loop settings, model selection
+└── schemas.py              typed records exchanged between components
+kuairand-starter-kit/       organiser-provided kit and KuaiRand-Pure data (unmodified)
+deliverables/submitted-run/ run log, usage, tree and scores for the submitted run
+docs/                       design notes, EDA findings, and the final report
+```
+
+### Two research engines
+
+The repository contains two implementations of the research loop, developed in
+parallel during the hackathon.
+
+`src/` is the system this README describes: a linear, evidence-driven loop with
+online research, on-demand skills, hypothesis ranking and integrity validation.
+
+`src/engine/` is a second engine built around a **solution tree** — it keeps
+several promising branches alive at once and selects the next node to expand
+with UCB, rather than advancing a single line of work. It is the engine that
+produced the numbers recorded in `deliverables/submitted-run/` and analysed in
+`docs/FINAL-REPORT.md`. Run it with:
+
+```bash
+python src/engine/agent.py
+```
+
+The two share the same starter kit, the same data directory, and the same
+`long_view` target and metrics, so their results are directly comparable. The
+README's *Limitations* section notes that the `src/` search policy "selects one
+hypothesis at a time" and that a stronger version "could maintain a true
+research tree" — `Hayden/agent/` is an implementation of exactly that idea, and
+folding it into the main loop is the clearest next step for this codebase.
+
+---
+
 ## Setup and Installation
 
 ### 1. Clone the repository

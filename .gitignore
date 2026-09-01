@@ -73,9 +73,9 @@ workspaces/
 
 *.npy
 *.npz
-*/agent/cache/
-*/agent/runs/
-*/agent/state/archive_*/
+src/engine/cache/
+src/engine/runs/
+src/engine/state/archive_*/
 catboost_info/
 *.tsv
 *.tfevents
@@ -85,15 +85,15 @@ catboost_info/
 #   submission_agent.csv        0.5982  agent run, inherited tree
 #   submission_agent_clean.csv  0.5966  agent run, zero inherited knowledge
 # Everything else is an intermediate, kept on disk but not in git.
-*/agent/state/submission.csv
-*/agent/state/submission_v2.csv
-*/agent/state/submission_v5.csv
-*/agent/state/submission_v6.csv
-*/agent/state/submission_v9.csv
-*/agent/state/submission_v10.csv
-*/agent/state/submission_blend.csv
-*/agent/state/submission_gauc.csv
-*/agent/state/submission_big_*.csv
+src/engine/state/submission.csv
+src/engine/state/submission_v2.csv
+src/engine/state/submission_v5.csv
+src/engine/state/submission_v6.csv
+src/engine/state/submission_v9.csv
+src/engine/state/submission_v10.csv
+src/engine/state/submission_blend.csv
+src/engine/state/submission_gauc.csv
+src/engine/state/submission_big_*.csv
 
 # =========================
 # Per-run agent state  (added 2026-08-31)
@@ -103,19 +103,24 @@ catboost_info/
 # and every pull conflicts. Each person's runs should be their own.
 # The run log is a required deliverable - snapshot it into deliverables/ when a
 # run is one you want to submit, rather than tracking the live file.
-*/agent/state/tree.json
-*/agent/state/tree.*.json
-*/agent/state/memory.json
-*/agent/state/state.json
-*/agent/state/stages.json
-*/agent/state/findings.json
-*/agent/state/run_log.jsonl
-*/agent/state/best_solution.py
-*/agent/state/usage.json
-*/agent/state/evaluate.sha256
+src/engine/state/tree.json
+src/engine/state/tree.*.json
+src/engine/state/memory.json
+src/engine/state/state.json
+src/engine/state/stages.json
+src/engine/state/findings.json
+src/engine/state/run_log.jsonl
+src/engine/state/best_solution.py
+src/engine/state/usage.json
+src/engine/state/evaluate.sha256
 
 # One starter kit at the repo root; the tarball is 45M and re-downloadable.
 kuairand-starter-kit/KuaiRand-Pure.tar.gz
-Hayden/kuairand-starter-kit/
-*/agent/state/findings.*.json
-*/agent/context.py.bloated
+src/engine/state/findings.*.json
+
+# per-iteration worker output, regenerated on every run
+src/engine/runs/
+src/engine/cache/
+
+# Legacy per-person working directory, superseded by src/engine/
+Hayden/

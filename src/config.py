@@ -21,11 +21,21 @@ load_dotenv()
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
-DATA_DIR = PROJECT_ROOT / "data"
-
 STARTER_KIT_DIR = (
     PROJECT_ROOT
     / "kuairand-starter-kit"
+)
+
+# The directory holding the KuaiRand-Pure CSVs. Passed straight through to
+# baseline.py as --data_dir, so it must be the folder containing the logs,
+# not its parent. Override with DATA_DIR in .env if the kit lives elsewhere.
+DATA_DIR = Path(
+    os.getenv(
+        "DATA_DIR",
+        STARTER_KIT_DIR
+        / "KuaiRand-Pure"
+        / "data",
+    )
 )
 
 RUNS_DIR = PROJECT_ROOT / "runs"
