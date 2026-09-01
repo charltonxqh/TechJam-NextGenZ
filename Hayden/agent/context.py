@@ -46,9 +46,24 @@ Within-user ranking of logged impressions on KuaiRand-Pure (short-video feed).
 ## A mathematical property of the scoring you should reason about
 
 Both metrics depend ONLY on the ordering of scores within a single user's group.
-Formally: adding any per-user constant c_u to every score of user u leaves both
-GAUC and nDCG@5 exactly unchanged. Scores are compared only inside a user, never
-across users. The absolute values are never used - only the relative order.
+Scores are compared only inside a user, never across users. The absolute values
+are never used - only the relative order.
+
+The general form: applying ANY strictly increasing function f_u to every score of
+user u leaves both GAUC and nDCG@5 exactly unchanged. That covers, and rules out
+as no-ops:
+
+    adding a per-user constant          x + c_u
+    multiplying by a per-user scale     s_u * x        (s_u > 0)
+    per-user z-scoring                  (x - mean_u) / std_u
+    per-user min-max or rank scaling
+    any per-user calibration or temperature
+
+Each of these is a strictly increasing per-user map, so each is provably
+incapable of changing either metric by more than floating-point noise. Do not
+spend an iteration measuring one - the answer is 0.0000 by construction. Only a
+transform that changes the ORDER of two items belonging to the SAME user can
+move the score.
 
 Consider carefully what that implies about which parts of a model's output are
 measured and which are discarded, and whether the current training objective
@@ -132,78 +147,68 @@ CONTRACT = """## Code contract
 Return a complete, self-contained Python module defining exactly:
 
     def run(D, seed=0):
-        # D["Xtr"]  int32 (1141112, 5)  encoded categorical ids, already offset
-        #                                per field into one shared embedding table
-        # D["ytr"]  float32 (1141112,)  long_view labels 0/1
-        # D["utr"]  list[str]           user id per train row
-        # D["Xva"], D["yva"], D["uva"]  same for the 124,909 validation rows
-        # D["dim"]  int                 total vocabulary size (40260) for the
-        #                                shared embedding table indexed by X
-        # D["fields"] list[str]         ['user_id','video_id','author_id','tab','dur_bucket']
-        #
-        # AUXILIARY SUPERVISION - TRAIN ROWS ONLY, aligned 1:1 with Xtr:
-        #   D["aux_is_click"]         float32 (1141112,)  0/1, 46.3% positive
-        #   D["aux_play_time_ms"]     float32 (1141112,)  watch time, mean 23260, 86% nonzero
-        #   D["aux_is_like"]          float32 (1141112,)  0/1, 1.9% positive
-        #   D["aux_is_profile_enter"] float32 (1141112,)  0/1, 2.5% positive
-        # These are extra LABELS, not features. They exist only for training rows -
-        # there is deliberately no validation counterpart, because using an outcome
-        # signal at prediction time would be leakage. Use them as auxiliary training
-        # targets if you want; never as model inputs.
+        # D["Xtr"] int32 (1141112, 5)  encoded ids, offset into one embedding table
+        # D["ytr"] float32             long_view 0/1
+        # D["utr"] list[str]           user id per row
+        # D["Xva"], D["yva"], D["uva"] same, 124,909 validation rows
+        # D["dim"] int                 vocabulary size for the shared table
+        # D["fields"]                  user_id, video_id, author_id, tab, dur_bucket
+        # aux targets, TRAIN ONLY, aligned to Xtr (labels, never inputs):
+        #   D["aux_is_click"] 46.3% pos · D["aux_play_time_ms"] 86% nonzero
+        #   D["aux_is_like"] 1.9% · D["aux_is_profile_enter"] 2.5%
         return valid_scores, history
 
-  valid_scores : 1-D array, len == len(D["yva"]), aligned to D["Xva"] row order.
-                 Any real numbers; only the ordering within each user is scored.
-                 NaN/Inf are rejected.
-  history      : list of per-epoch dicts, each at least
-                 {"epoch": int, "train_loss": float, "valid_primary": float}
-                 Compute valid_primary yourself so overfitting is visible:
-                     import sys; sys.path.insert(0, "../kuairand-starter-kit")
-                     from evaluate import evaluate
-                     evaluate(D["uva"], D["yva"], scores)["primary"]
+  valid_scores : 1-D, len == len(D["yva"]), same order as D["Xva"]. NaN/Inf rejected.
+  history      : [{"epoch": int, "train_loss": float, "valid_primary": float}, ...]
 
-D above is the DEFAULT feature set (the official 5 fields). You are not limited
-to it, but note WHERE each call belongs:
+## Richer features and ready-made models (optional, via tools)
 
-  build_features(...)  is a TOOL. Call it during the investigation phase, BEFORE
-                       you write code. Never call it inside run() - it is not
-                       importable there and takes a single spec object, not
-                       positional arguments.
-  load_features(name)  is what your CODE calls, using the handle the tool
-                       returned.
+    # investigation phase:
+    build_features({"name":"f1", "categorical":["user_id","video_id","author_id","tab"],
+                    "derived":["hour","dur_bucket","video_age"],
+                    "video_meta":["tag"], "video_stats":true, "aggregates":true})
+    train_model({"family":"catboost", "feature_handle":"f1",
+                 "params":{"loss":"QueryRMSE","depth":6,"iterations":600},
+                 "budget_s":500})     -> {"prediction_id":"catboost_ab12",
+                                          "valid_primary":0.6040}
+    blend({"prediction_ids":["catboost_ab12","lightgbm_cd34"]})
 
-So the flow is: tool call build_features({"name": "f1", ...}) -> returns
-{"handle": "f1", ...} -> your module does:
+    # then in run():
+    from models import train, blend, load_scores
+    r = train("catboost", "f1", {...}, budget_s=500, seed=seed)
+    if "error" in r: raise RuntimeError(r["error"])   # ALWAYS check
+    return load_scores(r["prediction_id"]), [{"epoch":1, "train_loss":0.0,
+                                              "valid_primary": r["valid_primary"]}]
 
-    import sys, pathlib
-    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
-    from tools import load_features
-    F = load_features("f1")
-    # F["Xtr"], F["ytr"], F["utr"], F["Xva"], F["yva"], F["uva"], F["dim"]
-    # F["Dtr"], F["Dva"]  dense block, present only if you asked for video_stats
+train_model runs the real CatBoost/LightGBM/XGBoost and handles group ordering
+and categorical indices; hand-writing that scored 0.5961 where the tool scored
+0.6040. The handle must be built by the TOOL first. Ranking objective key is
+`loss` for catboost, `objective` for lightgbm/xgboost.
 
-If you use F, use it for EVERYTHING - do not mix F and D, their column encodings
-differ and indices from one will be out of range in the other. Return scores of
-length len(F["yva"]), matching F["Xva"] row order.
+If you use load_features(handle) output F, use it for EVERYTHING - never mix F
+and D, their encodings differ and indices will be out of range.
 
-Installed and importable:
-  numpy, scipy, pandas, sklearn, stdlib
-  torch 2.13          CPU is fine - the baseline trains in 8 seconds
-  lightgbm 4.7        gradient boosting; 'lambdarank' is a learning-to-rank objective
-  catboost 1.2        gradient boosting with NATIVE high-cardinality categorical
-                      handling (ordered target statistics), ranking losses
-                      YetiRank / PairLogit / QuerySoftMax / QueryRMSE
-  xgboost 3.4         gradient boosting; rank:pairwise / rank:ndcg
-  recbole 1.2         a library of ~90 implemented recommender models
-  implicit 0.7        ALS / BPR matrix factorisation
-  optuna 4.9          hyperparameter search - tuning on VALIDATION is explicitly
-                      permitted by the rules and has not been done for most models
-Nothing else is installed; you cannot install packages.
+## Non-negotiables
 
-NOTE: importing torch and lightgbm/catboost in the SAME process segfaults on this
-machine (duplicate OpenMP runtime). Use one family per run.
-Wall-clock limit per run: 20 minutes. The baseline takes 8s, so if you approach the
-limit something is wrong with your implementation, not with the problem.
+  * Embeddings init at std 0.01. torch's nn.Embedding default of N(0,1) makes an
+    8-field FM produce logits with std ~21, which saturates the sigmoid and the
+    model never trains - this is the most common cause of a dead run here.
+        nn.init.normal_(self.V.weight, std=0.01); nn.init.zeros_(self.W.weight)
+  * Any strictly increasing PER-USER transform of the final scores - adding a
+    constant, scaling, z-scoring, calibration - cannot change either metric.
+    Do not spend an iteration measuring one.
+  * Never fabricate a feature column (np.random, zeros, hashed ids). Get it from
+    build_features or choose a different mechanism.
+  * A result at or below item popularity (0.5807) means the model did not train.
+    Fix the implementation; the mechanism was not tested.
+
+Installed: numpy, scipy, pandas, sklearn, torch 2.13, lightgbm 4.7, catboost 1.2,
+xgboost 3.4, recbole 1.2, implicit 0.7, optuna 4.9, stdlib. Nothing else.
+Hyperparameter search inside run() is allowed and encouraged - tuning on
+validation is permitted, and 20-50 configurations fit in the budget.
+NOTE: torch and lightgbm/catboost in the SAME process segfault here (duplicate
+OpenMP). Use one family per run.
+Wall-clock limit per run: 20 minutes. The baseline trains in 8 seconds.
 
 Rules:
   - NEVER modify or reimplement evaluate.py. Import it.
@@ -223,18 +228,22 @@ OUTPUT_SCHEMA = {
                        "description": "What validation primary you expect, and roughly why."},
         "falsifier": {"type": "string",
                       "description": "What observation would prove this hypothesis wrong."},
+        "stage": {"type": "string",
+                  "description": "Which pipeline stage this change targets: features, model, loss, training, tuning, ensembling, or evaluation."},
         "change_summary": {"type": "string",
                            "description": "The one thing that differs from the current best."},
         "code": {"type": "string",
                  "description": "The complete Python module. Must define run(D, seed=0)."},
     },
-    "required": ["hypothesis", "reasoning", "prediction", "falsifier", "change_summary", "code"],
+    "required": ["hypothesis", "reasoning", "prediction", "falsifier", "stage", "change_summary", "code"],
 }
 
 
 def build_prompt(best_code: str, best_primary: float, memory: str,
                  last_feedback: str, iteration: int, budget: dict,
-                 tree: str = "", incumbent: float | None = None) -> str:
+                 tree: str = "", incumbent: float | None = None,
+                 drafting: bool = False, draft_index: int = 0,
+                 draft_total: int = 0) -> str:
     """Assemble the per-iteration prompt."""
     import findings
     import tools
@@ -246,16 +255,22 @@ def build_prompt(best_code: str, best_primary: float, memory: str,
     # aliased: the `memory` parameter of this function is the WITHIN-RUN history,
     # which is a different thing from the cross-run store.
     import memory as store
+    import stages
     # Only the high-signal slice of the store goes in the prompt; the agent pulls
     # the rest on demand with the recall() tool. Negatives are what stop it
     # re-running measured dead ends, so they are never trimmed away silently.
     parts = [TASK, RULED_OUT, tools.describe(),
+             stages.as_prompt_section(),
              store.as_prompt_section(limit=14), CONTRACT]
 
+    if drafting:
+        parts.append(DRAFT + f"\n\nThis is draft {draft_index} of {draft_total}.")
     if tree:
         parts.append(tree)
 
-    if incumbent is not None and incumbent > best_primary + 1e-9:
+    # A draft is independent by definition, so the "you are extending a weaker
+    # branch" notice does not apply to it.
+    if (not drafting) and incumbent is not None and incumbent > best_primary + 1e-9:
         # We are deliberately expanding a node that is NOT the best. Say so
         # plainly, or the agent reads its starting point as a regression it
         # caused and spends the iteration undoing it.
@@ -293,7 +308,24 @@ them; a run of weak ideas ends the run early.""")
     parts.append("## Current best solution (your starting point)\n\n```python\n"
                  + best_code + "\n```")
 
-    parts.append("""## Now
+    if drafting:
+        parts.append("""## Now
+
+Build the representation with build_features, then TRAIN IT WITH train_model and
+check the score before you write any code. Both are tool calls. Only once a
+configuration measures well should run() reproduce it via train/load_scores.
+
+Do not hand-write a gradient-boosting model. The last draft built a good feature
+set, then wrote its own LightGBM and scored 0.5798; the same data through
+train_model scores 0.6014. Hand-writing the plumbing - group ordering,
+categorical indices, iteration counts - inside one attempt with no debugger is
+where drafts die, not in the choice of model.
+
+You may change the feature set, the model family and the objective all at once -
+that is what a draft is for, and on this benchmark it is the only way past the
+baseline. Return JSON with the required fields.""")
+    else:
+        parts.append("""## Now
 
 You may first call tools to investigate - inspect the data, list columns, build a
 feature set, or search the literature. Reply with {"tool": name, "args": {...}} and
@@ -370,3 +402,31 @@ def format_memory(attempts: list, limit: int = 12) -> str:
         if a.get("lesson"):
             lines.append(f"    lesson:     {a['lesson']}")
     return "\n".join(lines)
+
+
+DRAFT = """## You are DRAFTING an independent solution, not editing one
+
+This is a draft step. Write a COMPLETE solution from scratch. You are not
+constrained by, and should not try to preserve, any existing solution.
+
+Draft steps exist because of a measured property of this benchmark. The official
+FM baseline is a tuned local optimum for the five pre-encoded fields in D: on
+that representation NO stronger model beats it (measured on validation, same
+protocol) —
+
+    FM baseline, 5 fields                 0.6015
+    CatBoost QueryRMSE, 5 fields          0.5956
+    CatBoost YetiRank,  5 fields          0.5944
+    LightGBM lambdarank, 5 fields         0.5994
+
+    CatBoost QueryRMSE, richer features   0.6039
+
+Escaping it needs the feature set AND the model changed TOGETHER; either alone
+is worse than doing nothing. A single-change edit therefore cannot get there,
+which is why this step is allowed to change everything at once.
+
+So choose a representation and a model as one decision. Build the feature set
+you want with the build_features tool, then train on it. Make this draft
+DIFFERENT from the other drafts in this run — a different model family, a
+different feature set, a different objective. Diversity across drafts is the
+point; the best one becomes the solution the rest of the run improves."""

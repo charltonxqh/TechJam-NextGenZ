@@ -1,0 +1,52 @@
+[
+  {
+    "id": "m001",
+    "mechanism": "Expanded the input feature set from 5 fields to 8 fields including author_id, video_duration, music_id, and tag, while retaining the Factorization Machine architecture.",
+    "delta": -0.0039,
+    "seeds": 1,
+    "verdict": "NEGATIVE",
+    "confidence": "low (single seed, unreplicated - historically wrong by 2-4x)",
+    "source": "agent",
+    "iteration": 2,
+    "date": "2026-08-31",
+    "tags": [
+      "features"
+    ],
+    "superseded_by": null,
+    "note": "The current model lacks sufficient signal from the video items themselves; expanding the feature space to include video metadata (author, music, tags) and duration characteristics allows the factorization machine to better discriminate between videos for individual users, improving ranking."
+  },
+  {
+    "id": "m002",
+    "mechanism": "Switch from FM to DeepFM architecture utilizing the v2_features feature set, including categorical embeddings and dense video statistics.",
+    "delta": -0.0376,
+    "seeds": 1,
+    "verdict": "NEGATIVE",
+    "confidence": "low (single seed, unreplicated - historically wrong by 2-4x)",
+    "source": "agent",
+    "iteration": 3,
+    "date": "2026-08-31",
+    "tags": [
+      "features",
+      "architecture"
+    ],
+    "superseded_by": null,
+    "note": "Transitioning from a Factorization Machine (FM) to a DeepFM architecture with the newly constructed 'v2_features' feature set will improve ranking performance by capturing high-order feature interactions that a simple FM cannot model, while effectively utilizing the dense video statistics block."
+  },
+  {
+    "id": "m003",
+    "mechanism": "Implemented Optuna to tune the Factorization Machine hyperparameters (embedding dimension k, learning rate, weight decay) on the validation set.",
+    "delta": -0.0038,
+    "seeds": 1,
+    "verdict": "NEGATIVE",
+    "confidence": "low (single seed, unreplicated - historically wrong by 2-4x)",
+    "source": "agent",
+    "iteration": 4,
+    "date": "2026-08-31",
+    "tags": [
+      "features",
+      "tuning"
+    ],
+    "superseded_by": null,
+    "note": "The current model uses default parameters and lacks proper hyperparameter tuning. I will use the Optuna framework to optimize the Factorization Machine hyperparameters (embedding dimension k, weight decay, and learning rate) to better fit the data and avoid overfitting."
+  }
+]

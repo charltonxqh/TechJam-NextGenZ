@@ -1,0 +1,624 @@
+<title>Autonomous ML Research Agent</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bitter:wght@500;600&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  :root{
+    --paper:#F2F5F7; --surface:#FFFFFF; --sunk:#EAEFF3; --ink:#14181D; --muted:#5C6873;
+    --rule:#D3DBE2; --grid:#E6ECF0;
+    --accent:#0B6E7F; --accent-soft:#0B6E7F14; --accent-line:#0B6E7F55;
+    --pos:#2F6B45; --neg:#A8412A; --flat:#8B98A4; --warn:#9A6B14;
+    --shadow:0 1px 2px rgba(20,24,29,.05), 0 8px 24px rgba(20,24,29,.05);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --paper:#0D1115; --surface:#161B21; --sunk:#11161B; --ink:#E4EAF0; --muted:#93A1AD;
+      --rule:#28323B; --grid:#212A32;
+      --accent:#4FC3D4; --accent-soft:#4FC3D418; --accent-line:#4FC3D466;
+      --pos:#6DBF8B; --neg:#E28468; --flat:#6C7A87; --warn:#D9A741;
+      --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.3);
+    }
+  }
+  :root[data-theme="dark"]{
+    --paper:#0D1115; --surface:#161B21; --sunk:#11161B; --ink:#E4EAF0; --muted:#93A1AD;
+    --rule:#28323B; --grid:#212A32;
+    --accent:#4FC3D4; --accent-soft:#4FC3D418; --accent-line:#4FC3D466;
+    --pos:#6DBF8B; --neg:#E28468; --flat:#6C7A87; --warn:#D9A741;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.3);
+  }
+
+  *{box-sizing:border-box}
+  body{background:var(--paper);color:var(--ink);margin:0;
+    font-family:"IBM Plex Sans",system-ui,-apple-system,sans-serif;font-size:16px;line-height:1.6;
+    padding:clamp(26px,5vw,60px) clamp(16px,4vw,40px)}
+  .wrap{max-width:960px;margin:0 auto;display:flex;flex-direction:column;gap:clamp(30px,4vw,48px)}
+
+  header{display:flex;flex-direction:column;gap:12px;padding-bottom:24px;border-bottom:2px solid var(--ink)}
+  .eyebrow{font-family:"IBM Plex Mono",monospace;font-size:11.5px;letter-spacing:.16em;
+    text-transform:uppercase;color:var(--accent);font-weight:600}
+  h1{font-family:Bitter,Georgia,serif;font-weight:600;font-size:clamp(30px,5vw,44px);
+    line-height:1.12;margin:0;letter-spacing:-.015em;text-wrap:balance}
+  .sub{color:var(--muted);max-width:68ch;margin:0;font-size:17px}
+
+  .part{display:flex;flex-direction:column;gap:clamp(18px,2.5vw,26px)}
+  .parthead{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--rule);padding-bottom:10px}
+  .partnum{font-family:"IBM Plex Mono",monospace;font-size:12px;font-weight:600;color:var(--accent);
+    letter-spacing:.1em}
+  .parthead h2{font-family:Bitter,Georgia,serif;font-weight:600;font-size:23px;margin:0;letter-spacing:-.01em}
+
+  figure{margin:0;background:var(--surface);border:1px solid var(--rule);border-radius:6px;
+    padding:clamp(18px,3vw,26px);box-shadow:var(--shadow);display:flex;flex-direction:column;gap:14px}
+  figure h3{font-family:Bitter,Georgia,serif;font-weight:600;font-size:18px;margin:0;line-height:1.3;text-wrap:balance}
+  figcaption{color:var(--muted);font-size:14.5px;max-width:72ch;margin:0}
+  figcaption strong{color:var(--ink);font-weight:600}
+  .plot{width:100%;overflow-x:auto}
+  svg{display:block;width:100%;height:auto}
+
+  .lbl{font-family:"IBM Plex Mono",monospace;font-size:11px;fill:var(--muted)}
+  .lbl-s{font-family:"IBM Plex Mono",monospace;font-size:9.5px;fill:var(--muted)}
+  .val{font-family:"IBM Plex Mono",monospace;font-size:11.5px;fill:var(--ink);font-weight:500}
+  .box-t{font-family:"IBM Plex Mono",monospace;font-size:11.5px;fill:var(--ink);font-weight:600}
+  .axis{stroke:var(--grid);stroke-width:1}
+  .base{stroke:var(--ink);stroke-width:1.5;stroke-dasharray:5 3}
+  .baselbl{font-family:"IBM Plex Mono",monospace;font-size:10.5px;fill:var(--ink);font-weight:500}
+  .flow{stroke:var(--accent-line);stroke-width:1.5;fill:none;marker-end:url(#ar)}
+  .flow-d{stroke:var(--flat);stroke-width:1.2;fill:none;stroke-dasharray:3 3;marker-end:url(#ar2)}
+
+  .legend{display:flex;flex-wrap:wrap;gap:14px;font-size:12.5px;color:var(--muted);
+    font-family:"IBM Plex Mono",monospace}
+  .legend span{display:inline-flex;align-items:center;gap:6px}
+  .sw{width:11px;height:11px;border-radius:2px;display:inline-block}
+
+  .headline{display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:1px;
+    background:var(--rule);border:1px solid var(--rule);border-radius:6px;overflow:hidden}
+  .kpi{background:var(--surface);padding:16px 18px;display:flex;flex-direction:column;gap:3px}
+  .kpi .k{font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.09em;
+    text-transform:uppercase;color:var(--muted)}
+  .kpi .v{font-family:"IBM Plex Mono",monospace;font-size:26px;font-weight:500;
+    font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+  .kpi .n{font-size:12.5px;color:var(--muted)}
+  .v.pos{color:var(--pos)}
+
+  table{border-collapse:collapse;width:100%;font-size:14px}
+  th,td{text-align:right;padding:7px 10px;border-bottom:1px solid var(--rule)}
+  th:first-child,td:first-child{text-align:left}
+  th{font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.08em;
+    text-transform:uppercase;color:var(--muted);font-weight:500}
+  td.num{font-family:"IBM Plex Mono",monospace;font-variant-numeric:tabular-nums}
+  tr.hi td{background:var(--accent-soft)}
+  td.lo{color:var(--muted)}
+
+  .stack{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:14px}
+  .card{background:var(--sunk);border:1px solid var(--rule);border-radius:5px;padding:14px 16px;
+    display:flex;flex-direction:column;gap:5px}
+  .card .t{font-family:"IBM Plex Mono",monospace;font-size:12px;font-weight:600;color:var(--accent)}
+  .card .d{font-size:13.5px;color:var(--muted)}
+
+  footer{color:var(--muted);font-size:13px;border-top:1px solid var(--rule);padding-top:18px}
+  code{font-family:"IBM Plex Mono",monospace;font-size:.92em;background:var(--grid);
+    padding:1px 5px;border-radius:3px}
+</style>
+
+<div class="wrap">
+
+<header>
+  <div class="eyebrow">TechJam 2026 · Track 2 · KuaiRand-Pure</div>
+  <h1>An agent that runs the ML engineering loop, and what it took to make it work</h1>
+  <p class="sub">A Gemini-driven agent that forms a hypothesis, writes the code, trains,
+  measures, and decides — with no human in the loop. This deck covers what it is, how
+  it recovers from its own mistakes, the measurement that explained why it stalled, and
+  the result.</p>
+</header>
+
+<div class="headline">
+  <div class="kpi"><span class="k">Test primary</span><span class="v">0.5981</span><span class="n">baseline 0.5946</span></div>
+  <div class="kpi"><span class="k">Scored delta</span><span class="v pos">+0.0035</span><span class="n">mean of both metric gains</span></div>
+  <div class="kpi"><span class="k">Interventions</span><span class="v">0</span><span class="n">12 iterations · 121 min</span></div>
+  <div class="kpi"><span class="k">LLM tokens</span><span class="v">419K</span><span class="n">67 calls · 0 GPU-hours</span></div>
+</div>
+
+<!-- ================= PART 1 : ARCHITECTURE ================= -->
+<section class="part">
+  <div class="parthead"><span class="partnum">PART 1</span><h2>What the system is</h2></div>
+
+  <figure>
+    <h3>Fifteen modules, three concerns: decide, execute, remember</h3>
+    <div class="plot">
+      <svg viewBox="0 0 900 430" role="img" aria-label="System architecture: decide, execute and remember layers">
+        <defs>
+          <marker id="ar" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M0,0 L8,4 L0,8 z" fill="var(--accent-line)"/></marker>
+          <marker id="ar2" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M0,0 L8,4 L0,8 z" fill="var(--flat)"/></marker>
+        </defs>
+
+        <!-- LAYER LABELS -->
+        <text class="lbl" x="12" y="60" font-weight="600" fill="var(--accent)">DECIDE</text>
+        <text class="lbl" x="12" y="205" font-weight="600" fill="var(--accent)">EXECUTE</text>
+        <text class="lbl" x="12" y="345" font-weight="600" fill="var(--accent)">REMEMBER</text>
+
+        <!-- DECIDE -->
+        <rect x="100" y="20" width="150" height="52" rx="4" fill="var(--accent-soft)" stroke="var(--accent)"/>
+        <text class="box-t" x="175" y="42" text-anchor="middle">agent.py</text>
+        <text class="lbl-s" x="175" y="58" text-anchor="middle">the loop · convergence</text>
+
+        <rect x="285" y="20" width="150" height="52" rx="4" fill="var(--surface)" stroke="var(--rule)"/>
+        <text class="box-t" x="360" y="42" text-anchor="middle">context.py</text>
+        <text class="lbl-s" x="360" y="58" text-anchor="middle">what it sees · contract</text>
+
+        <rect x="470" y="20" width="130" height="52" rx="4" fill="var(--surface)" stroke="var(--rule)"/>
+        <text class="box-t" x="535" y="42" text-anchor="middle">llm.py</text>
+        <text class="lbl-s" x="535" y="58" text-anchor="middle">Gemini · rotation</text>
+
+        <rect x="635" y="20" width="150" height="52" rx="4" fill="var(--surface)" stroke="var(--rule)"/>
+        <text class="box-t" x="710" y="42" text-anchor="middle">tree.py</text>
+        <text class="lbl-s" x="710" y="58" text-anchor="middle">which node to expand</text>
+
+        <!-- TOOLS strip -->
+        <rect x="100" y="100" width="685" height="46" rx="4" fill="var(--sunk)" stroke="var(--accent)" stroke-dasharray="4 3"/>
+        <text class="box-t" x="120" y="122" fill="var(--accent)">tools.py + models.py</text>
+        <text class="lbl-s" x="120" y="138">list_columns · inspect · build_features · search_papers · train_model · blend · list_predictions · recall</text>
+
+        <!-- EXECUTE -->
+        <rect x="100" y="175" width="150" height="52" rx="4" fill="var(--surface)" stroke="var(--rule)"/>
+        <text class="box-t" x="175" y="197" text-anchor="middle">runner.py</text>
+        <text class="lbl-s" x="175" y="213" text-anchor="middle">subprocess · timeout</text>
+
+        <rect x="285" y="175" width="150" height="52" rx="4" fill="var(--surface)" stroke="var(--rule)"/>
+        <text class="box-t" x="360" y="197" text-anchor="middle">worker.py</text>
+        <text class="lbl-s" x="360" y="213" text-anchor="middle">runs one candidate</text>
+
+        <rect x="470" y="175" width="150" height="52" rx="4" fill="var(--surface)" stroke="var(--rule)"/>
+        <text class="box-t" x="545" y="197" text-anchor="middle">diagnose.py</text>
+        <text class="lbl-s" x="545" y="213" text-anchor="middle">GAUC · nDCG · health</text>
+
+        <rect x="655" y="175" width="130" height="52" rx="4" fill="var(--surface)" stroke="var(--neg)"/>
+        <text class="box-t" x="720" y="197" text-anchor="middle" fill="var(--neg)">guards.py</text>
+        <text class="lbl-s" x="720" y="213" text-anchor="middle">integrity · bounds</text>
+
+        <!-- REMEMBER -->
+        <rect x="100" y="315" width="150" height="52" rx="4" fill="var(--surface)" stroke="var(--rule)"/>
+        <text class="box-t" x="175" y="337" text-anchor="middle">memory.py</text>
+        <text class="lbl-s" x="175" y="353" text-anchor="middle">findings · provenance</text>
+
+        <rect x="285" y="315" width="150" height="52" rx="4" fill="var(--surface)" stroke="var(--rule)"/>
+        <text class="box-t" x="360" y="337" text-anchor="middle">stages.py</text>
+        <text class="lbl-s" x="360" y="353" text-anchor="middle">yield per stage</text>
+
+        <rect x="470" y="315" width="150" height="52" rx="4" fill="var(--surface)" stroke="var(--rule)"/>
+        <text class="box-t" x="545" y="337" text-anchor="middle">run_log.jsonl</text>
+        <text class="lbl-s" x="545" y="353" text-anchor="middle">graded deliverable</text>
+
+        <rect x="655" y="315" width="130" height="52" rx="4" fill="var(--surface)" stroke="var(--pos)"/>
+        <text class="box-t" x="720" y="337" text-anchor="middle" fill="var(--pos)">finalize.py</text>
+        <text class="lbl-s" x="720" y="353" text-anchor="middle">test, once</text>
+
+        <!-- flows -->
+        <path class="flow" d="M175,72 L175,96"/>
+        <path class="flow" d="M360,72 L360,96"/>
+        <path class="flow" d="M710,72 L710,96"/>
+        <path class="flow" d="M175,146 L175,171"/>
+        <path class="flow" d="M250,201 L281,201"/>
+        <path class="flow" d="M435,201 L466,201"/>
+        <path class="flow" d="M545,227 L545,311"/>
+        <path class="flow-d" d="M175,367 L175,395 L860,395 L860,46 L789,46"/>
+        <text class="lbl-s" x="480" y="390" text-anchor="middle">memory and stage yield feed the next prompt</text>
+
+        <!-- data boundary -->
+        <rect x="100" y="248" width="685" height="42" rx="4" fill="none" stroke="var(--neg)" stroke-dasharray="5 3"/>
+        <text class="box-t" x="120" y="266" fill="var(--neg)">prep.py — cache holds TRAIN + VALIDATION only</text>
+        <text class="lbl-s" x="120" y="281">the test split is not present in the process the agent runs in</text>
+      </svg>
+    </div>
+    <figcaption>The agent decides in the top layer, runs candidates in an isolated
+    subprocess in the middle, and writes what it learned to the bottom — which feeds
+    the next prompt. <strong>The red band is the data boundary:</strong> test is never
+    loaded into the loop, only once in <code>finalize.py</code> after convergence.</figcaption>
+  </figure>
+
+  <div class="stack">
+    <div class="card"><span class="t">Facts, not answers</span><span class="d">The prompt carries the metric's invariance property, the reference ladder, and every ruled-out idea — but no conclusions. The agent derives findings by calling <code>inspect()</code> itself.</span></div>
+    <div class="card"><span class="t">Test is physically absent</span><span class="d">Three layers: <code>prep.py</code> caches train+valid only, <code>tools.py</code> filters test dates at read time, <code>guards.py</code> fails the run if a test-shaped array appears.</span></div>
+    <div class="card"><span class="t">Failures are data</span><span class="d">Eight failure classes, each with a recovery instruction fed back to the model, two repair attempts, then the hypothesis is abandoned and logged.</span></div>
+  </div>
+</section>
+
+<!-- ================= PART 2 : THE LOOP ================= -->
+<section class="part">
+  <div class="parthead"><span class="partnum">PART 2</span><h2>How one iteration runs</h2></div>
+
+  <figure>
+    <h3>The twelve-stage MLE loop, and where each stage lives</h3>
+    <div class="plot">
+      <svg viewBox="0 0 900 420" role="img" aria-label="The twelve stage loop mapped to mechanisms">
+        <!-- left column: canonical stages -->
+        <g>
+          <text class="lbl" x="20" y="20" font-weight="600">CANONICAL STAGE</text>
+          <text class="lbl" x="330" y="20" font-weight="600">MECHANISM</text>
+          <text class="lbl" x="700" y="20" font-weight="600">OBSERVED</text>
+        </g>
+        <g class="val">
+          <text x="20" y="52">1 · Understand dataset</text>
+          <text x="20" y="82">2 · Reproduce baseline</text>
+          <text x="20" y="112">3 · Read history</text>
+          <text x="20" y="142">4 · Generate hypothesis</text>
+          <text x="20" y="172">5 · Plan experiment</text>
+          <text x="20" y="202">6 · Modify code</text>
+          <text x="20" y="232">7 · Run training</text>
+          <text x="20" y="262">8 · Evaluate</text>
+          <text x="20" y="292">9 · Analyze</text>
+          <text x="20" y="322">10 · Keep / rollback</text>
+          <text x="20" y="352">11 · Record</text>
+          <text x="20" y="382">12 · Next hypothesis</text>
+        </g>
+        <g class="lbl">
+          <text x="330" y="52">inspect() · list_columns()</text>
+          <text x="330" y="82">seed_solution.py — the official FM</text>
+          <text x="330" y="112">tree + attempts in prompt · recall()</text>
+          <text x="330" y="142">required field, rejected if absent</text>
+          <text x="330" y="172">reasoning · prediction · falsifier · stage</text>
+          <text x="330" y="202">LLM writes run(D, seed) · build_features</text>
+          <text x="330" y="232">runner.py — subprocess, 20 min cap</text>
+          <text x="330" y="262">evaluate.py, unmodified and checksummed</text>
+          <text x="330" y="292">segments · health · sanity bounds</text>
+          <text x="330" y="322">2σ, or 3-seed replication</text>
+          <text x="330" y="352">tree node · memory · stage yield · log</text>
+          <text x="330" y="382">node selection decides the parent</text>
+        </g>
+        <g class="val" text-anchor="end" fill="var(--accent)">
+          <text x="880" y="52">12 calls</text>
+          <text x="880" y="82">once per run</text>
+          <text x="880" y="112">every prompt</text>
+          <text x="880" y="142">every iteration</text>
+          <text x="880" y="172">every iteration</text>
+          <text x="880" y="202">10 + 4 + 2 tool calls</text>
+          <text x="880" y="232">every iteration</text>
+          <text x="880" y="262">every iteration</text>
+          <text x="880" y="292">every iteration</text>
+          <text x="880" y="322">2 kept of 12</text>
+          <text x="880" y="352">every iteration</text>
+          <text x="880" y="382">↺</text>
+        </g>
+        <line class="axis" x1="20" y1="32" x2="880" y2="32"/>
+        <line class="axis" x1="20" y1="395" x2="880" y2="395"/>
+      </svg>
+    </div>
+    <figcaption>Two additions to the canonical loop, both forced by measurement:
+    a <strong>drafting phase</strong> before the loop proper (Part 4), and
+    <strong>node selection</strong> at the top of each iteration, so the loop does not
+    always build on the current best.</figcaption>
+  </figure>
+
+  <figure>
+    <h3>Robustness: eight failure classes, each with a way out</h3>
+    <div class="plot">
+      <svg viewBox="0 0 900 250" role="img" aria-label="Failure taxonomy and recovery ladder">
+        <rect x="20" y="20" width="150" height="46" rx="4" fill="var(--accent-soft)" stroke="var(--accent)"/>
+        <text class="box-t" x="95" y="40" text-anchor="middle">candidate code</text>
+        <text class="lbl-s" x="95" y="56" text-anchor="middle">isolated subprocess</text>
+        <path class="flow" d="M170,43 L206,43"/>
+
+        <g>
+          <rect x="210" y="14" width="112" height="26" rx="3" fill="var(--surface)" stroke="var(--neg)"/>
+          <text class="lbl" x="266" y="31" text-anchor="middle" fill="var(--neg)">syntax</text>
+          <rect x="330" y="14" width="112" height="26" rx="3" fill="var(--surface)" stroke="var(--neg)"/>
+          <text class="lbl" x="386" y="31" text-anchor="middle" fill="var(--neg)">import</text>
+          <rect x="450" y="14" width="112" height="26" rx="3" fill="var(--surface)" stroke="var(--neg)"/>
+          <text class="lbl" x="506" y="31" text-anchor="middle" fill="var(--neg)">contract</text>
+          <rect x="570" y="14" width="112" height="26" rx="3" fill="var(--surface)" stroke="var(--neg)"/>
+          <text class="lbl" x="626" y="31" text-anchor="middle" fill="var(--neg)">alignment</text>
+
+          <rect x="210" y="50" width="112" height="26" rx="3" fill="var(--surface)" stroke="var(--warn)"/>
+          <text class="lbl" x="266" y="67" text-anchor="middle" fill="var(--warn)">timeout</text>
+          <rect x="330" y="50" width="112" height="26" rx="3" fill="var(--surface)" stroke="var(--warn)"/>
+          <text class="lbl" x="386" y="67" text-anchor="middle" fill="var(--warn)">oom</text>
+          <rect x="450" y="50" width="112" height="26" rx="3" fill="var(--surface)" stroke="var(--warn)"/>
+          <text class="lbl" x="506" y="67" text-anchor="middle" fill="var(--warn)">numerical</text>
+          <rect x="570" y="50" width="112" height="26" rx="3" fill="var(--surface)" stroke="var(--warn)"/>
+          <text class="lbl" x="626" y="67" text-anchor="middle" fill="var(--warn)">runtime</text>
+        </g>
+
+        <path class="flow" d="M446,84 L446,106"/>
+        <rect x="290" y="110" width="312" height="42" rx="4" fill="var(--sunk)" stroke="var(--rule)"/>
+        <text class="box-t" x="446" y="128" text-anchor="middle">recovery instruction → repair (×2)</text>
+        <text class="lbl-s" x="446" y="144" text-anchor="middle">a timeout also shrinks the next budget: 1200s → 300s → 120s</text>
+
+        <path class="flow" d="M446,152 L446,176"/>
+        <rect x="230" y="180" width="200" height="40" rx="4" fill="var(--surface)" stroke="var(--pos)"/>
+        <text class="box-t" x="330" y="198" text-anchor="middle" fill="var(--pos)">repaired → measured</text>
+        <text class="lbl-s" x="330" y="213" text-anchor="middle">enters the convergence window</text>
+
+        <rect x="462" y="180" width="200" height="40" rx="4" fill="var(--surface)" stroke="var(--flat)"/>
+        <text class="box-t" x="562" y="198" text-anchor="middle">abandoned → logged</text>
+        <text class="lbl-s" x="562" y="213" text-anchor="middle">does NOT advance the window</text>
+        <path class="flow-d" d="M400,176 L340,176"/>
+        <path class="flow-d" d="M492,176 L552,176"/>
+
+        <text class="lbl" x="20" y="240">a crashed iteration consumes budget but cannot end the run — per the organisers' clarification</text>
+      </svg>
+    </div>
+    <figcaption>The characteristic failure of an autonomous agent is optimising against
+    its own bug. Diagnostics are wrapped too, because a malformed result from generated
+    code must degrade one iteration and never terminate a run — <strong>it once
+    didn't, and killed three runs before it was fixed.</strong></figcaption>
+  </figure>
+</section>
+
+<!-- ================= PART 3 : DIAGNOSIS ================= -->
+<section class="part">
+  <div class="parthead"><span class="partnum">PART 3</span><h2>Why it stalled — the measurement that explained everything</h2></div>
+
+  <figure>
+    <h3>On the five fields the agent is given, nothing beats the baseline</h3>
+    <div class="plot">
+      <svg viewBox="0 0 880 300" role="img" aria-label="Grouped bars comparing models on five fields versus richer features">
+        <line class="axis" x1="150" y1="30"  x2="860" y2="30"/>
+        <line class="axis" x1="150" y1="95"  x2="860" y2="95"/>
+        <line class="axis" x1="150" y1="160" x2="860" y2="160"/>
+        <line class="axis" x1="150" y1="225" x2="860" y2="225"/>
+        <text class="lbl" x="142" y="34"  text-anchor="end">0.606</text>
+        <text class="lbl" x="142" y="99"  text-anchor="end">0.601</text>
+        <text class="lbl" x="142" y="164" text-anchor="end">0.596</text>
+        <text class="lbl" x="142" y="229" text-anchor="end">0.591</text>
+        <line class="base" x1="150" y1="88.5" x2="860" y2="88.5"/>
+        <text class="baselbl" x="856" y="82" text-anchor="end">FM baseline 0.6015</text>
+
+        <rect x="200" y="165.7" width="70" height="59.3" fill="var(--neg)" rx="2"/>
+        <rect x="278" y="57.9"  width="70" height="167.1" fill="var(--accent)" rx="2"/>
+        <text class="val" x="235" y="160" text-anchor="middle">.5956</text>
+        <text class="val" x="313" y="52"  text-anchor="middle">.6039</text>
+        <text class="lbl" x="274" y="248" text-anchor="middle">CatBoost QueryRMSE</text>
+
+        <rect x="420" y="181.3" width="70" height="43.7" fill="var(--neg)" rx="2"/>
+        <rect x="498" y="65.7"  width="70" height="159.3" fill="var(--accent)" rx="2"/>
+        <text class="val" x="455" y="176" text-anchor="middle">.5944</text>
+        <text class="val" x="533" y="60"  text-anchor="middle">.6033</text>
+        <text class="lbl" x="494" y="248" text-anchor="middle">CatBoost YetiRank</text>
+
+        <rect x="640" y="116.3" width="70" height="108.7" fill="var(--neg)" rx="2"/>
+        <rect x="718" y="90.3"  width="70" height="134.7" fill="var(--accent)" rx="2"/>
+        <text class="val" x="675" y="111" text-anchor="middle">.5994</text>
+        <text class="val" x="753" y="85"  text-anchor="middle">.6014</text>
+        <text class="lbl" x="714" y="248" text-anchor="middle">LightGBM lambdarank</text>
+
+        <line x1="150" y1="225" x2="860" y2="225" stroke="var(--rule)" stroke-width="1.5"/>
+        <text class="lbl" x="150" y="278">validation primary · higher is better</text>
+      </svg>
+    </div>
+    <div class="legend">
+      <span><i class="sw" style="background:var(--neg)"></i>the 5 pre-encoded fields the agent starts with</span>
+      <span><i class="sw" style="background:var(--accent)"></i>richer features it can build itself</span>
+    </div>
+    <figcaption>The organisers had already tuned the baseline flat — <code>k=8/16/32</code>
+    and <code>5→13 fields</code> both change nothing. It is a real local optimum, and the
+    agent starts inside it. Escaping needs the feature set <strong>and</strong> the model
+    changed together; either alone is worse than doing nothing. A loop restricted to one
+    change per iteration therefore has <strong>no single-coordinate ascent direction</strong>.</figcaption>
+  </figure>
+</section>
+
+<!-- ================= PART 4 : THE FIX ================= -->
+<section class="part">
+  <div class="parthead"><span class="partnum">PART 4</span><h2>The fix, and the result</h2></div>
+
+  <figure>
+    <h3>Adding a drafting phase turned zero accepted changes into two</h3>
+    <div class="plot">
+      <svg viewBox="0 0 880 210" role="img" aria-label="Comparison of two run configurations">
+        <line class="base" x1="150" y1="150" x2="860" y2="150"/>
+        <text class="baselbl" x="856" y="144" text-anchor="end">baseline 0.6015</text>
+        <rect x="210" y="155.6" width="150" height="14.4" fill="var(--flat)" rx="2"/>
+        <text class="val" x="285" y="148" text-anchor="middle">0.6015</text>
+        <text class="lbl" x="285" y="190" text-anchor="middle">improve-only · 12 iterations</text>
+        <text class="lbl" x="285" y="205" text-anchor="middle" fill="var(--neg)">0 of 12 accepted</text>
+        <rect x="520" y="51.6" width="150" height="118.4" fill="var(--pos)" rx="2"/>
+        <text class="val" x="595" y="44" text-anchor="middle">0.6051</text>
+        <text class="lbl" x="595" y="190" text-anchor="middle">3 drafts + improve · 12 iterations</text>
+        <text class="lbl" x="595" y="205" text-anchor="middle" fill="var(--pos)">2 of 12 accepted</text>
+        <line x1="150" y1="170" x2="860" y2="170" stroke="var(--rule)" stroke-width="1.5"/>
+      </svg>
+    </div>
+    <figcaption>Same budget, same convergence rule, same model. The only change: the
+    first three iterations write <strong>independent</strong> solutions instead of
+    editing the incumbent — the policy AIDE (arXiv:2502.13138) describes as “first
+    explore a set of diverse initial solutions and continuously improve the best one.”
+    We had built its <em>improve</em> and <em>debug</em> steps and never its
+    <em>draft</em> step.</figcaption>
+  </figure>
+
+  <figure>
+    <h3>The search tree the run actually produced</h3>
+    <div class="plot">
+      <svg viewBox="0 0 900 250" role="img" aria-label="Solution tree with three drafts and an improve chain">
+        <!-- root -->
+        <rect x="30" y="100" width="120" height="44" rx="4" fill="var(--surface)" stroke="var(--ink)"/>
+        <text class="box-t" x="90" y="120" text-anchor="middle">n0 · FM</text>
+        <text class="val" x="90" y="136" text-anchor="middle">0.6015</text>
+
+        <!-- drafts -->
+        <path class="flow" d="M150,112 L196,60"/>
+        <path class="flow" d="M150,122 L196,122"/>
+        <path class="flow" d="M150,132 L196,190"/>
+        <text class="lbl-s" x="163" y="82" fill="var(--accent)">drafts</text>
+
+        <rect x="200" y="36" width="130" height="44" rx="4" fill="var(--surface)" stroke="var(--pos)"/>
+        <text class="box-t" x="265" y="56" text-anchor="middle" fill="var(--pos)">n1 · CatBoost</text>
+        <text class="val" x="265" y="72" text-anchor="middle">0.6040 ✓ kept</text>
+
+        <rect x="200" y="100" width="130" height="44" rx="4" fill="var(--surface)" stroke="var(--rule)"/>
+        <text class="box-t" x="265" y="120" text-anchor="middle">n2 · CatBoost</text>
+        <text class="val" x="265" y="136" text-anchor="middle">0.6040</text>
+
+        <rect x="200" y="168" width="130" height="44" rx="4" fill="var(--surface)" stroke="var(--neg)" stroke-dasharray="4 3"/>
+        <text class="box-t" x="265" y="188" text-anchor="middle" fill="var(--neg)">n3 · LightGBM</text>
+        <text class="val" x="265" y="204" text-anchor="middle" fill="var(--neg)">0.5659 dead</text>
+
+        <!-- improve chain -->
+        <path class="flow" d="M330,58 L376,58"/>
+        <rect x="380" y="36" width="140" height="44" rx="4" fill="var(--accent-soft)" stroke="var(--pos)" stroke-width="2"/>
+        <text class="box-t" x="450" y="56" text-anchor="middle" fill="var(--pos)">n4 · + tuning</text>
+        <text class="val" x="450" y="72" text-anchor="middle" fill="var(--pos)">0.6051 ✓ kept</text>
+
+        <path class="flow" d="M520,58 L566,58"/>
+        <rect x="570" y="36" width="110" height="44" rx="4" fill="var(--surface)" stroke="var(--rule)"/>
+        <text class="box-t" x="625" y="56" text-anchor="middle">n5</text>
+        <text class="val" x="625" y="72" text-anchor="middle">0.6045</text>
+
+        <path class="flow" d="M680,58 L716,58"/>
+        <rect x="720" y="36" width="160" height="44" rx="4" fill="var(--surface)" stroke="var(--rule)"/>
+        <text class="box-t" x="800" y="56" text-anchor="middle">n6 → n8</text>
+        <text class="val" x="800" y="72" text-anchor="middle">0.6047 ×3</text>
+
+        <text class="lbl" x="380" y="120">The incumbent was established on iteration 1 and improved on iteration 8.</text>
+        <text class="lbl" x="380" y="140">A node more than 0.010 below the best is marked dead and never expanded.</text>
+        <text class="lbl" x="380" y="160">Node selection is UCB-style: value + exploration bonus − depth penalty.</text>
+        <text class="lbl" x="380" y="180" fill="var(--muted)">Under greedy hill-climbing, n1 would have been deleted at iteration 1</text>
+        <text class="lbl" x="380" y="200" fill="var(--muted)">and the path to 0.6051 would not exist.</text>
+      </svg>
+    </div>
+    <figcaption>Three independent drafts branch from the FM root; the best becomes the
+    incumbent and improve-steps continue from it. <strong>Both accepted changes came
+    from mechanisms added this session</strong> — drafting at iteration 1, and
+    hyperparameter tuning at iteration 8, a pipeline stage with zero attempts across
+    the ten previous runs.</figcaption>
+  </figure>
+
+  <figure>
+    <h3>Where the effort went across ten earlier runs</h3>
+    <div class="plot">
+      <svg viewBox="0 0 880 250" role="img" aria-label="Attempts per pipeline stage against best result">
+        <text class="lbl" x="150" y="34" text-anchor="end">features</text>
+        <rect x="160" y="22" width="272" height="16" fill="var(--flat)" rx="2"/>
+        <text class="val" x="442" y="35">17 attempts</text>
+        <text class="val" x="700" y="35" fill="var(--muted)">best +0.0000</text>
+
+        <text class="lbl" x="150" y="66" text-anchor="end">loss</text>
+        <rect x="160" y="54" width="192" height="16" fill="var(--flat)" rx="2"/>
+        <text class="val" x="362" y="67">12 attempts</text>
+        <text class="val" x="700" y="67" fill="var(--muted)">best +0.0000</text>
+
+        <text class="lbl" x="150" y="98" text-anchor="end">model</text>
+        <rect x="160" y="86" width="176" height="16" fill="var(--accent)" rx="2"/>
+        <text class="val" x="346" y="99">11 attempts</text>
+        <text class="val" x="700" y="99" fill="var(--pos)">best +0.0025</text>
+
+        <text class="lbl" x="150" y="130" text-anchor="end">training</text>
+        <rect x="160" y="118" width="80" height="16" fill="var(--flat)" rx="2"/>
+        <text class="val" x="250" y="131">5 attempts</text>
+        <text class="val" x="700" y="131" fill="var(--muted)">best −0.0000</text>
+
+        <text class="lbl" x="150" y="162" text-anchor="end">ensembling</text>
+        <rect x="160" y="150" width="48" height="16" fill="var(--accent)" rx="2"/>
+        <text class="val" x="218" y="163">3 attempts</text>
+        <text class="val" x="700" y="163" fill="var(--pos)">best +0.0013</text>
+
+        <text class="lbl" x="150" y="194" text-anchor="end">evaluation</text>
+        <rect x="160" y="182" width="16" height="16" fill="var(--flat)" rx="2"/>
+        <text class="val" x="186" y="195">1 attempt</text>
+        <text class="val" x="700" y="195" fill="var(--muted)">best −0.0009</text>
+
+        <text class="lbl" x="150" y="226" text-anchor="end" fill="var(--neg)">tuning</text>
+        <rect x="160" y="214" width="3" height="16" fill="var(--neg)" rx="1"/>
+        <text class="val" x="186" y="227" fill="var(--neg)">0 attempts</text>
+        <text class="val" x="700" y="227" fill="var(--neg)">never tried</text>
+      </svg>
+    </div>
+    <figcaption>The agent circled <em>features</em> and <em>loss</em> — 29 attempts,
+    <strong>zero gain between them</strong> — while never attempting hyperparameter
+    tuning, despite <code>optuna</code> being installed throughout. The general lesson:
+    <strong>a capability that is listed but not demonstrated is not reachable.</strong>
+    Optuna and the model tool both went from zero uses to immediate adoption the moment
+    a worked code example appeared in the contract.</figcaption>
+  </figure>
+</section>
+
+<!-- ================= PART 5 : NUMBERS ================= -->
+<section class="part">
+  <div class="parthead"><span class="partnum">PART 5</span><h2>The numbers, and what they mean</h2></div>
+
+  <figure>
+    <h3>The attainable range is 0.475 to 0.865, not 0 to 1</h3>
+    <div class="plot">
+      <svg viewBox="0 0 880 168" role="img" aria-label="Score ladder from random to oracle on the test split">
+        <line x1="60" y1="86" x2="850" y2="86" stroke="var(--rule)" stroke-width="2"/>
+        <rect x="70.5" y="80" width="248.6" height="12" fill="var(--grid)"/>
+        <rect x="306.1" y="80" width="6.9" height="12" fill="var(--pos)"/>
+        <g class="lbl" text-anchor="middle">
+          <line x1="70.5" y1="70" x2="70.5" y2="102" stroke="var(--muted)"/>
+          <text x="70.5" y="60">random</text><text x="70.5" y="120" class="val">.4753</text>
+          <line x1="260.5" y1="70" x2="260.5" y2="102" stroke="var(--muted)"/>
+          <text x="260.5" y="60">popularity</text><text x="260.5" y="120" class="val">.5715</text>
+          <line x1="306.1" y1="64" x2="306.1" y2="108" stroke="var(--ink)" stroke-width="1.5"/>
+          <text x="292" y="52" text-anchor="end">baseline</text><text x="292" y="136" class="val" text-anchor="end">.5946</text>
+          <line x1="313" y1="64" x2="313" y2="108" stroke="var(--pos)" stroke-width="2"/>
+          <text x="330" y="52" text-anchor="start" fill="var(--pos)">agent</text>
+          <text x="330" y="136" class="val" text-anchor="start" fill="var(--pos)">.5981</text>
+          <line x1="839.2" y1="70" x2="839.2" y2="102" stroke="var(--muted)"/>
+          <text x="839.2" y="60">oracle</text><text x="839.2" y="120" class="val">.8645</text>
+        </g>
+        <text class="lbl" x="60" y="158">test primary — perfect ranking reaches only 0.8645, because 27.1% of test users have no positive label at all</text>
+      </svg>
+    </div>
+    <figcaption>nDCG@5 counts an all-negative user as 0 and still includes them in the
+    mean, so <code>0·0.271 + 1·0.092 + 1·0.637 = 0.729</code> is its hard ceiling. With
+    GAUC capped at 1.0, perfect ranking scores 0.8645. The baseline already holds
+    <strong>30.7%</strong> of that range — which is why gains here are measured in
+    thousandths, and why per-seed noise of σ = 0.0008 matters so much.</figcaption>
+  </figure>
+
+  <figure>
+    <h3>GAUC carries roughly twice the gain, and both transfer to test</h3>
+    <div class="plot">
+      <svg viewBox="0 0 880 190" role="img" aria-label="Per-metric improvement over baseline">
+        <line class="axis" x1="230" y1="20" x2="230" y2="150"/>
+        <text class="lbl" x="218" y="46" text-anchor="end">GAUC · valid</text>
+        <rect x="230" y="32" width="294" height="18" fill="var(--accent)" rx="2"/>
+        <text class="val" x="534" y="46">+0.0049</text>
+        <text class="lbl" x="218" y="78" text-anchor="end">GAUC · test</text>
+        <rect x="230" y="64" width="282" height="18" fill="var(--accent)" rx="2" opacity=".72"/>
+        <text class="val" x="522" y="78">+0.0047</text>
+        <text class="lbl" x="218" y="110" text-anchor="end">nDCG@5 · valid</text>
+        <rect x="230" y="96" width="132" height="18" fill="var(--pos)" rx="2"/>
+        <text class="val" x="372" y="110">+0.0022</text>
+        <text class="lbl" x="218" y="142" text-anchor="end">nDCG@5 · test</text>
+        <rect x="230" y="128" width="132" height="18" fill="var(--pos)" rx="2" opacity=".72"/>
+        <text class="val" x="372" y="142">+0.0022</text>
+        <text class="lbl" x="230" y="178">improvement over the official baseline</text>
+      </svg>
+    </div>
+    <figcaption>The split is structural, not a quirk of this model. It also
+    <strong>transfers</strong>: validation and test gains agree within 0.0002 on both
+    metrics, which is what a real effect looks like against a noise floor of σ = 0.0008.</figcaption>
+  </figure>
+
+  <figure>
+    <h3>All four submissions, each scored once on the hidden test split</h3>
+    <div class="plot">
+      <table>
+        <thead><tr><th>submission</th><th>GAUC</th><th>nDCG@5</th><th>primary</th><th>Δ</th><th>interventions</th></tr></thead>
+        <tbody>
+          <tr class="hi"><td>agent · drafting run</td><td class="num">0.6657</td><td class="num">0.5304</td><td class="num">0.5981</td><td class="num">+0.0035</td><td class="num">0</td></tr>
+          <tr><td>agent · exploration run<sup>†</sup></td><td class="num lo">0.6659</td><td class="num lo">0.5313</td><td class="num lo">0.5986</td><td class="num lo">+0.0040</td><td class="num lo">0</td></tr>
+          <tr><td>agent · earlier compliant run</td><td class="num lo">0.6631</td><td class="num lo">0.5301</td><td class="num lo">0.5966</td><td class="num lo">+0.0020</td><td class="num lo">0</td></tr>
+          <tr><td>human expert baseline<sup>‡</sup></td><td class="num lo">0.6694</td><td class="num lo">0.5329</td><td class="num lo">0.6012</td><td class="num lo">+0.0066</td><td class="num lo">dozens</td></tr>
+          <tr><td>official FM baseline</td><td class="num lo">0.6610</td><td class="num lo">0.5282</td><td class="num lo">0.5946</td><td class="num lo">—</td><td class="num lo">—</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <figcaption><sup>†</sup> used a minimum-iteration floor that was not declared in
+    advance, so it is reported but not proposed. <sup>‡</sup> a 21-model ensemble built
+    by hand over several hours — included to quantify the gap, not as the agent's
+    output. The highlighted row is the submission, and it is compliant under the
+    organisers' <em>default</em> ε = 0.002 / N = 3 rule, which would have stopped the run
+    at iteration 8 with exactly this solution.</figcaption>
+  </figure>
+</section>
+
+<footer>
+  Validation figures come from the agent's own loop, which never sees test. Test is
+  loaded once, in <code>finalize.py</code>, after convergence; every submission passes
+  the official <code>submit.py --check</code> validator at 170,588 rows. The winning
+  solution reproduced its recorded validation score to four decimal places on re-run.
+  Per-seed noise is σ = 0.0008, so any delta below ~0.0016 is treated as unproven and
+  re-measured across seeds before it is kept.
+</footer>
+
+</div>

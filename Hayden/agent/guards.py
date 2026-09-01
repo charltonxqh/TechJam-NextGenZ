@@ -59,6 +59,16 @@ def sanity_bounds(primary: float) -> list[str]:
     if primary < 0.4834:
         warn.append(f"primary {primary:.4f} is BELOW random (0.4834) — this is a bug, "
                     f"not a result.")
+    elif primary < 0.5807:
+        # A hard floor at "worse than random" is too generous to catch a broken
+        # model: one iteration scored 0.4962, which is indistinguishable from
+        # random yet sat above the 0.4834 line and was reported as an ordinary
+        # result. Item popularity needs no model at all and reaches 0.5807, so
+        # anything below that is a training failure rather than a weak idea.
+        warn.append(f"primary {primary:.4f} is below ITEM POPULARITY (0.5807), which "
+                    f"uses no model at all. A trained model scoring this is almost "
+                    f"certainly not learning — suspect initialisation, learning "
+                    f"rate, or score/label misalignment rather than the mechanism.")
     if primary > 0.8484:
         warn.append(f"primary {primary:.4f} EXCEEDS the oracle ceiling (0.8484) — "
                     f"impossible. There is a leak or an evaluation error.")

@@ -1,0 +1,68 @@
+[
+  {
+    "id": "m001",
+    "mechanism": "Switched from baseline 5-field features to a 9-feature set including author_id, music_id, and 51 dense video statistics (via build_features handle 'extended_features').",
+    "delta": -0.1053,
+    "seeds": 1,
+    "verdict": "NEGATIVE",
+    "confidence": "low (single seed, unreplicated - historically wrong by 2-4x)",
+    "source": "agent",
+    "iteration": 1,
+    "date": "2026-08-31",
+    "tags": [
+      "features"
+    ],
+    "superseded_by": null,
+    "note": "Incorporating dense video statistics and additional categorical features (author, music, video_type) allows the model to better distinguish video quality beyond user-item interaction history, which should improve ranking performance over the baseline."
+  },
+  {
+    "id": "m002",
+    "mechanism": "Replaced the standard FM model with a DeepFM architecture, incorporating a multi-layer perceptron (MLP) with ReLU activation to supplement the existing FM factorization layer.",
+    "delta": -0.1213,
+    "seeds": 1,
+    "verdict": "NEGATIVE",
+    "confidence": "low (single seed, unreplicated - historically wrong by 2-4x)",
+    "source": "agent",
+    "iteration": 2,
+    "date": "2026-08-31",
+    "tags": [
+      "architecture"
+    ],
+    "superseded_by": null,
+    "note": "The current model fails to generalize well because it ignores the strong, non-linear relationship between user-specific behavior and video-specific attributes; switching to a DeepFM architecture will better capture these latent cross-features, which are critical for the within-user ranking task."
+  },
+  {
+    "id": "m003",
+    "mechanism": "Replaced the pointwise BCEWithLogitsLoss with a Bayesian Personalized Ranking (BPR) loss, which samples pairs of (positive, negative) samples for every user to optimize the pairwise margin.",
+    "delta": -0.0024,
+    "seeds": 1,
+    "verdict": "NEGATIVE",
+    "confidence": "low (single seed, unreplicated - historically wrong by 2-4x)",
+    "source": "agent",
+    "iteration": 3,
+    "date": "2026-08-31",
+    "tags": [
+      "loss"
+    ],
+    "superseded_by": null,
+    "note": "The current model uses BCE loss, which is a pointwise objective. Since the benchmark metrics GAUC and nDCG@5 depend only on the relative ranking of items, a pairwise loss (specifically BPR or WARP) is more directly aligned with the objective than a pointwise regression. This should provide a better "
+  },
+  {
+    "id": "m004",
+    "mechanism": "Replaced the custom PyTorch FM architecture with a LightGBM LambdaRank implementation using default 5-field features and tuned hyperparameters.",
+    "delta": -0.0213,
+    "seeds": 1,
+    "verdict": "NEGATIVE",
+    "confidence": "low (single seed, unreplicated - historically wrong by 2-4x)",
+    "source": "agent",
+    "iteration": 4,
+    "date": "2026-08-31",
+    "tags": [
+      "features",
+      "architecture",
+      "tuning"
+    ],
+    "superseded_by": null,
+    "note": "I will replace the hand-written FM with a tuned LightGBM Ranker using the 'lambdarank' objective. This should work because gradient boosting trees naturally capture higher-order feature interactions that a linear FM (with dot product interaction) misses, and the lambdarank objective directly optimiz"
+  }
+]

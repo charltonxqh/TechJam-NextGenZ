@@ -1,0 +1,20 @@
+{
+  "valid": {
+    "GAUC": "0.67228496",
+    "nDCG@5": "0.53791475",
+    "primary": "0.60509986",
+    "users": 22377,
+    "rows": 124909
+  },
+  "test": {
+    "GAUC": "0.665747",
+    "nDCG@5": "0.5304383",
+    "primary": "0.5980927",
+    "users": 23875,
+    "rows": 170588
+  },
+  "scored_delta": "0.0034926534",
+  "seeds": 1,
+  "baseline_valid": 0.6015,
+  "baseline_test": 0.5946
+}

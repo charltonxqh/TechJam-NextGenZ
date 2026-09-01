@@ -1,0 +1,141 @@
+[
+  {
+    "id": "m001",
+    "mechanism": "Replaced the linear FM baseline with a CatBoost ranker using a rich feature set including video metadata, statistics, and temporal bucketing.",
+    "delta": 0.0025,
+    "seeds": 1,
+    "verdict": "POSITIVE",
+    "confidence": "low (single seed, unreplicated - historically wrong by 2-4x)",
+    "source": "agent",
+    "iteration": 1,
+    "date": "2026-08-31",
+    "tags": [
+      "features",
+      "architecture"
+    ],
+    "superseded_by": null,
+    "note": "Expanding the feature space to include video metadata, statistics, and temporal signals allows a non-linear ranking model to capture complex interactions that the FM baseline's limited categorical features miss."
+  },
+  {
+    "id": "m002",
+    "mechanism": "Replaced the linear FM architecture with a CatBoost ranker using a comprehensive set of video metadata, temporal features, and historical aggregates, optimized with QueryRMSE.",
+    "delta": 0.0001,
+    "seeds": 3,
+    "verdict": "NEUTRAL",
+    "confidence": "medium (replicated, within noise)",
+    "source": "agent",
+    "iteration": 3,
+    "date": "2026-08-31",
+    "tags": [
+      "features",
+      "architecture"
+    ],
+    "superseded_by": null,
+    "note": "Expanding the feature set to include rich metadata (music_id, tags) and historical aggregates while using a gradient-boosted ranker with a listwise objective (QueryRMSE) will better capture user preferences and improve nDCG@5, overcoming the FM model's limitation in handling high-cardinality interac"
+  },
+  {
+    "id": "m003",
+    "mechanism": "Switch from FM to LightGBM ranker with QueryRMSE/lambdarank objective using f_v3 features.",
+    "delta": -0.038,
+    "seeds": 1,
+    "verdict": "NEGATIVE",
+    "confidence": "low (single seed, unreplicated - historically wrong by 2-4x)",
+    "source": "agent",
+    "iteration": 6,
+    "date": "2026-08-31",
+    "tags": [
+      "loss",
+      "features",
+      "architecture"
+    ],
+    "superseded_by": null,
+    "note": "Transitioning from a Factorization Machine to a LightGBM ranker will allow better capture of non-linear feature interactions and list-based ranking objectives. By leveraging the f_v3 feature set and the 'lambdarank' objective, we can directly optimize for the ranking metrics (nDCG) rather than point"
+  },
+  {
+    "id": "m004",
+    "mechanism": "Switched to 'f_v5' feature set and tuned CatBoost hyperparameters (learning_rate: 0.03, depth: 6, iterations: 1200) to better match the model complexity with the newly introduced granular features.",
+    "delta": 0.0011,
+    "seeds": 3,
+    "verdict": "POSITIVE",
+    "confidence": "medium (replicated, within noise)",
+    "source": "agent",
+    "iteration": 8,
+    "date": "2026-08-31",
+    "tags": [
+      "features",
+      "architecture",
+      "tuning"
+    ],
+    "superseded_by": null,
+    "note": "CatBoost models often benefit significantly from hyperparameter tuning (specifically learning_rate and tree depth) when presented with a richer feature set, as the default parameters may be too aggressive for the complexity of user-video interaction patterns."
+  },
+  {
+    "id": "m005",
+    "mechanism": "Created an ensemble by training two CatBoost models (one QueryRMSE, one QuerySoftMax) with 'f_v6' features and averaging their predicted probabilities.",
+    "delta": -0.0006,
+    "seeds": 1,
+    "verdict": "NEUTRAL",
+    "confidence": "none (single seed, within noise - indistinguishable from zero)",
+    "source": "agent",
+    "iteration": 9,
+    "date": "2026-09-01",
+    "tags": [
+      "loss",
+      "features",
+      "architecture",
+      "ensembling"
+    ],
+    "superseded_by": null,
+    "note": "Ensembling two CatBoost rankers trained with different initializations and slightly varied objectives (QueryRMSE and QuerySoftMax) will reduce variance and improve ranking performance, specifically by mitigating the noise inherent in single-model training on granular interaction features."
+  },
+  {
+    "id": "m006",
+    "mechanism": "Replaced the ensemble of two models with a single CatBoost model using the 'f_v7' feature set and early stopping enabled to improve generalization.",
+    "delta": -0.0004,
+    "seeds": 1,
+    "verdict": "NEUTRAL",
+    "confidence": "none (single seed, within noise - indistinguishable from zero)",
+    "source": "agent",
+    "iteration": 10,
+    "date": "2026-09-01",
+    "tags": [
+      "features",
+      "architecture",
+      "ensembling"
+    ],
+    "superseded_by": null,
+    "note": "The previous ensemble failed due to potential overfitting or divergence in the two objectives; switching to a single-model approach with a more robust feature set (f_v7) and an aggressive early-stopping strategy will better capture the underlying user preferences without the noise of ensembling."
+  },
+  {
+    "id": "m007",
+    "mechanism": "Added a sample filter that caps training groups at a maximum of 20 items per user to align the training distribution more closely with the validation group size distribution.",
+    "delta": -0.0004,
+    "seeds": 1,
+    "verdict": "NEUTRAL",
+    "confidence": "none (single seed, within noise - indistinguishable from zero)",
+    "source": "agent",
+    "iteration": 11,
+    "date": "2026-09-01",
+    "tags": [
+      "other"
+    ],
+    "superseded_by": null,
+    "note": "The drastic difference in group size distributions between training (median 31) and validation (median 4) suggests the model is overfitting on dense training groups. By subsampling training data to match the validation group size distribution (e.g., capping max group sizes), we can force the model t"
+  },
+  {
+    "id": "m008",
+    "mechanism": "Replaced 'f_v7' with 'f_v8', a new feature set built using build_features that excludes historical user-aggregates and focuses purely on static video metadata, stats, and temporal bucket info to improve cold-start robustness.",
+    "delta": -0.0003,
+    "seeds": 1,
+    "verdict": "NEUTRAL",
+    "confidence": "none (single seed, within noise - indistinguishable from zero)",
+    "source": "agent",
+    "iteration": 12,
+    "date": "2026-09-01",
+    "tags": [
+      "features"
+    ],
+    "superseded_by": null,
+    "note": "The regression on cold users suggests the current model relies too heavily on historical aggregates which are absent or unreliable for cold-start users. By increasing the weight of item-intrinsic features (video_stats, metadata) and reducing reliance on user-history aggregates, the model should gene"
+  }
+]

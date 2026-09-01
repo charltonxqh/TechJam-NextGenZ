@@ -21,8 +21,26 @@ from google.genai import types
 
 
 def _load_env(path: str = None) -> None:
-    """Minimal .env loader (no python-dotenv dependency)."""
-    p = pathlib.Path(path or pathlib.Path(__file__).resolve().parent.parent / ".env")
+    """Minimal .env loader (no python-dotenv dependency).
+
+    Searches upward from this file rather than assuming a fixed depth. The repo
+    was restructured so that agent/ moved a level deeper (into Hayden/), and the
+    hardcoded parent.parent then pointed at a directory with no .env — the run
+    died at startup with "No API key found" even though the file was sitting two
+    levels up. .env is gitignored, so it does not move when the tracked files do;
+    walking up is the only lookup that survives a reorganisation.
+    """
+    if path:
+        p = pathlib.Path(path)
+    else:
+        p = None
+        for d in pathlib.Path(__file__).resolve().parents:
+            cand = d / ".env"
+            if cand.exists():
+                p = cand
+                break
+        if p is None:
+            return
     if not p.exists():
         return
     for line in p.read_text().splitlines():
