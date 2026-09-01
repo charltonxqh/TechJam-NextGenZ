@@ -184,6 +184,10 @@ video_features_statistic_pure.csv
 
 Make sure `DATA_DIR` points to the directory containing these files.
 
+`DATA_DIR` defaults to `kuairand-starter-kit/KuaiRand-Pure/data`, which is where
+the extracted kit puts them, so no configuration is needed for a standard
+checkout. Set `DATA_DIR` in `.env` only if the data lives elsewhere.
+
 ---
 
 ## Steps to Reproduce the Results
@@ -252,11 +256,8 @@ runs/
 │   ├── run_log.md
 │   ├── research_knowledge.jsonl
 │   ├── research_trace.jsonl
-│   ├── hypothesis_trace.jsonl
 │   ├── skill_trace.jsonl
 │   └── debug/
-│
-└── research_prior.jsonl
 ```
 
 Key files:
@@ -266,28 +267,69 @@ Key files:
 - `run_log.md` — human-readable run summary.
 - `research_knowledge.jsonl` — EDA findings and external research evidence.
 - `research_trace.jsonl` — online-search, source-selection, extraction, and storage trace.
-- `hypothesis_trace.jsonl` — generated candidate hypotheses, ranking criteria, scores, and selected candidate.
 - `skill_trace.jsonl` — records which skills were loaded and injected.
 - `debug/` — generated candidates, validation failures, verification reports, and repair artifacts.
-- `research_prior.jsonl` — reusable research knowledge across sessions.
 
 ### Result Reporting
 
-Use the results from the final autonomous run rather than an intermediate development experiment.
+Results below are from the submitted autonomous run, not an intermediate
+development experiment. Raw artefacts are in `deliverables/submitted-run/`.
 
-| Model | GAUC | nDCG@5 | Primary |
+**KuaiRand-Pure — required benchmark**
+
+| | GAUC | nDCG@5 | Primary |
 |---|---:|---:|---:|
-| Official baseline | `<baseline GAUC>` | `<baseline nDCG@5>` | `0.6015` validation |
-| Validation-best autonomous result | `<GAUC>` | `<nDCG@5>` | `<Primary>` |
-| Final one-time test result | `<GAUC>` | `<nDCG@5>` | `<Primary>` |
+| Official FM baseline — validation<sup>†</sup> | 0.6674 | 0.5357 | 0.6016 |
+| **Validation-best autonomous result** | **0.6723** | **0.5379** | **0.6051** |
+| Official FM baseline — test<sup>†</sup> | 0.6610 | 0.5282 | 0.5946 |
+| **Final one-time test result** | **0.6657** | **0.5304** | **0.5981** |
 
-Also report:
+<sup>†</sup> Baseline figures are the organisers' own, quoted from
+`kuairand-starter-kit/baseline_scores.json`, not re-measured by us.
 
-- total iterations,
-- manual interventions,
-- wall-clock time,
-- LLM/token usage if available, and
-- GPU-hours if applicable.
+**Absolute delta over the official baseline** (Judging Criteria formula,
+`½[(GAUC_agent − GAUC_base) + (nDCG_agent − nDCG_base)]`, on the test split):
+
+```text
+½[(0.665747 − 0.6610) + (0.530438 − 0.5282)]  =  +0.003493
+```
+
+Per-metric: GAUC **+0.0047**, nDCG@5 **+0.0022**. For scale, the organisers
+report a 5-seed baseline standard deviation of 0.0008 on each test metric, and
+an oracle ceiling of 0.8645 test primary — nDCG@5 cannot exceed 0.7289 because
+27.1% of test users are all-negative.
+
+The submission file is `deliverables/submitted-run/submission_draft.csv`
+(170,588 rows, `row_id,user_id,video_id,score`). Verify it with:
+
+```bash
+python kuairand-starter-kit/submit.py --check deliverables/submitted-run/submission_draft.csv
+```
+
+**Bonus benchmarks** (KuaiRand-1k, KuaiRand-27k) were **not attempted**; no
+outputs are submitted for them.
+
+### Resource Usage
+
+Measured for the converged run, from the agent's own accounting in
+`deliverables/submitted-run/usage.json` and `run_log.jsonl`.
+
+| | |
+|---|---:|
+| Total token consumption (input + output) | **418,825** |
+| — input / prompt tokens | 402,598 |
+| — output tokens | 16,227 |
+| — of which served from cache | 106,251 |
+| LLM calls | 67 |
+| Total agent wall-clock | **120.6 min** (≈2.0 h) |
+| Iterations used (cap 50) | **12** |
+| GPU-hours | **0** — CPU only, no GPU used |
+| Manual interventions | 0 |
+
+The run declared its convergence rule before starting (`epsilon` 0.002, `N` 3,
+minimum 12 iterations, self-imposed caps of 40 iterations / 300 min, all within
+the organisers' 50-iteration / 6-hour limits). The declaration is the first
+record in `run_log.jsonl`.
 
 ---
 
