@@ -10,7 +10,9 @@ from __future__ import annotations
 import hashlib
 import pathlib
 
-KIT = pathlib.Path(__file__).resolve().parent.parent / "kuairand-starter-kit"
+_HERE = pathlib.Path(__file__).resolve().parent
+KIT = next(p / "kuairand-starter-kit" for p in [_HERE, *_HERE.parents]
+           if (p / "kuairand-starter-kit").is_dir())   # search upward: layout-independent
 CACHE = pathlib.Path(__file__).resolve().parent / "cache"
 
 # sha256 of the pristine organiser-provided scorer, recorded at setup.

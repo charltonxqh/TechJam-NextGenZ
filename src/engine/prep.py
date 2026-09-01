@@ -16,7 +16,9 @@ import sys
 
 import numpy as np
 
-KIT = pathlib.Path(__file__).resolve().parent.parent / "kuairand-starter-kit"
+_HERE = pathlib.Path(__file__).resolve().parent
+KIT = next(p / "kuairand-starter-kit" for p in [_HERE, *_HERE.parents]
+           if (p / "kuairand-starter-kit").is_dir())   # search upward: layout-independent
 sys.path.insert(0, str(KIT))
 
 from data import load, encode, FIELDS  # noqa: E402
