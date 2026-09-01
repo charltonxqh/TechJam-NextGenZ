@@ -1,14 +1,16 @@
 """
-Description: Defines shared configuration settings used across the autonomous research system.
+Description: Defines and loads shared configuration settings used across the autonomous research system.
 Owner: Shared
-Input: Environment variables for secrets and fixed project configuration
+Input: Environment variables and configuration values
 Output: System configuration
 """
 
 import os
+
 from pathlib import Path
 
 from dotenv import load_dotenv
+
 
 load_dotenv()
 
@@ -38,9 +40,10 @@ WORKSPACES_DIR = (
 # Research Loop
 # =========================
 
-MAX_ITERATIONS = 5
+MAX_ITERATIONS = 50
 
 CONVERGENCE_EPSILON = 0.002
+
 CONVERGENCE_PATIENCE = 3
 
 EXPERIMENT_TIMEOUT = 3600
@@ -52,13 +55,25 @@ EXPERIMENT_TIMEOUT = 3600
 
 GEMINI_API_KEY = os.getenv(
     "GEMINI_API_KEY",
-    ""
+    "",
 )
 
-RESEARCHER_MODEL = "gemini-3.1-flash-lite"
+RESEARCHER_MODEL = (
+    "gemini-3.5-flash-lite"
+)
 
-REFLECTOR_MODEL = "gemini-3.1-flash-lite"
+CODER_MODEL = (
+    "gemini-3.5-flash-lite"
+)
 
-DEFAULT_MODEL = "gemini-3.1-flash-lite"
+IMPLEMENTATION_VERIFIER_MODEL = (
+    "gemini-3.5-flash-lite"
+)
 
-LIGHT_MODEL = "gemini-3.1-flash-lite"
+DEFAULT_MODEL = (
+    "gemini-3.5-flash-lite"
+)
+
+LIGHT_MODEL = (
+    "gemini-3.1-flash-lite"
+)
