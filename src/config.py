@@ -59,19 +59,19 @@ GEMINI_API_KEY = os.getenv(
 )
 
 RESEARCHER_MODEL = (
-    "gemini-3.7-flash"
+    "gemini-3.5-flash-lite"
 )
 
 CODER_MODEL = (
-    "gemini-3.7-flash"
+    "gemini-3.5-flash-lite"
 )
 
 IMPLEMENTATION_VERIFIER_MODEL = (
-    "gemini-3.7-flash"
+    "gemini-3.5-flash-lite"
 )
 
 DEFAULT_MODEL = (
-    "gemini-3.7-flash"
+    "gemini-3.5-flash-lite"
 )
 
 LIGHT_MODEL = (
