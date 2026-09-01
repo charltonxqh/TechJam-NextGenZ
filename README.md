@@ -1,178 +1,205 @@
 # TechJam-NextGenZ
 
-Autonomous ML Research Agent for the TikTok TechJam 2026 recommendation-system challenge.
+An autonomous ML research agent for the TikTok TechJam 2026 recommendation
+challenge, built on the KuaiRand-Pure benchmark.
 
-## Project Overview
+## What it does
 
-TechJam-NextGenZ is an autonomous machine learning research agent designed to improve a recommender-system pipeline on the KuaiRand-Pure benchmark.
+The agent is handed the official FM baseline and nothing else. From there it
+runs on its own: it questions the data, reads papers, writes a full solution,
+trains it, scores it on validation, and decides whether to keep it. Then it does
+it again, building on whichever attempt looks most promising. It stops when it
+stops improving.
 
-The challenge requires the agent to reproduce the official baseline, autonomously investigate promising improvements, modify the ML pipeline, run controlled experiments, evaluate validation performance, and iterate until convergence. The benchmark uses `long_view` as the relevance target and evaluates ranking quality within each user's logged impressions using:
+The target is `long_view`. Ranking quality is measured inside each user's own
+impressions:
 
 - **GAUC**
 - **nDCG@5**
 - **Primary = mean(GAUC, nDCG@5)**
 
-Our system is designed around an evidence-driven research loop rather than simple hyperparameter search.
+## The loop
 
 ```text
-Official baseline
-      ↓
-Research / targeted EDA / on-demand skills
-      ↓
-Research knowledge + experiment memory
-      ↓
-Generate multiple candidate hypotheses
-      ↓
-Rank hypotheses
-      ↓
-Select one controlled experiment
-      ↓
-Coder implements the experiment
-      ↓
-Candidate validation
-      ↓
-Research-integrity / leakage validation
-      ↓
-Implementation-fidelity verification
-      ↓
-Run validation experiment
-      ↓
-Keep / reject
-      ↓
-Update memory and research direction
-      ↓
-Repeat until convergence
-      ↓
-One-time final test evaluation
+                    ┌──────────────────────────────┐
+                    │  Draft phase (iterations 1-3)│
+                    │  three independent solutions │
+                    │  from scratch, not edits     │
+                    └───────────────┬──────────────┘
+                                    │
+                                    ▼
+       ┌────────────────────────────────────────────────────┐
+       │  Pick a node from the solution tree (UCB)           │
+       │  not always the best one — sometimes a near-miss    │
+       └───────────────────────┬────────────────────────────┘
+                               │
+                               ▼
+       ┌────────────────────────────────────────────────────┐
+       │  Investigate: query the data, search arXiv,         │
+       │  recall what past runs already measured             │
+       └───────────────────────┬────────────────────────────┘
+                               │
+                               ▼
+       ┌────────────────────────────────────────────────────┐
+       │  Propose a hypothesis and write the code for it     │
+       └───────────────────────┬────────────────────────────┘
+                               │
+                               ▼
+       ┌────────────────────────────────────────────────────┐
+       │  Run it in a subprocess, score on validation        │
+       │  crash → diagnose → repair, up to 3 tries           │
+       └───────────────────────┬────────────────────────────┘
+                               │
+                               ▼
+       ┌────────────────────────────────────────────────────┐
+       │  Keep or reject. Either way the node joins the tree │
+       │  and the result goes into memory                    │
+       └───────────────────────┬────────────────────────────┘
+                               │
+                    improving? │
+              ┌────────────────┴─────────────────┐
+              │ yes                           no │
+              ▼                                  ▼
+        back to the tree              one-time test evaluation
 ```
 
-### Key Components
+### Why a tree
 
-#### Autonomous Researcher
-The Researcher decides whether the next useful action should be online research, targeted EDA, loading an on-demand skill, or running an experiment. Research is evidence-driven: additional searches must address a concrete unresolved knowledge gap rather than simply consuming a research budget.
+Most agent loops keep one current-best solution and edit it. That does not work
+here, and we measured why.
 
-Before implementation, the Researcher generates multiple falsifiable hypotheses and ranks them using evidence support, metric alignment, dataset fit, information gain, feasibility, novelty, leakage safety, and compute efficiency.
+The FM baseline is already a tuned optimum for the five pre-encoded fields it is
+given. On that same feature set, nothing stronger beats it — CatBoost QueryRMSE
+scored 0.5956, CatBoost YetiRank 0.5944, LightGBM lambdarank 0.5994, all under
+the FM's 0.6015. The only thing that clears it is changing the features *and*
+the model at once (0.6039).
 
-#### Online Research Intelligence
-The agent can search the public web and arXiv. Retrieved sources are filtered for relevance before structured evidence is extracted and stored in research memory.
+So there is no single small edit that improves anything. An agent that only ever
+applies one change to its incumbent is stuck by construction, and ours was:
+twelve iterations, zero accepted.
 
-#### Autonomous EDA
-EDA is performed by deterministic tools. Completed analyses are tracked so the agent does not repeatedly run the same EDA without gaining new information.
+The fix was to open with three independent drafts, each choosing features and
+model together, and keep them all alive in a tree. The next node to expand is
+picked by UCB, so a slightly worse branch still gets explored instead of being
+discarded. After that change the same budget produced accepted solutions and
+moved validation from 0.6015 to 0.6051.
 
-#### On-Demand Skills
-The agent first sees lightweight skill metadata. Full skill content is loaded only when useful for the current reasoning step, reducing unnecessary prompt size and token usage.
+### What the agent can actually do
 
-#### Researcher–Coder Separation
-The Researcher decides **what should be tested and why**. A separate Coder translates the selected experiment specification into runnable code.
+Eight tools. It chooses which to call and when.
 
-#### Research Integrity
-The system includes deterministic checks to prevent prediction-time leakage. Same-impression post-exposure behavior such as `is_click`, `is_like`, `is_comment`, `is_follow`, `is_forward`, `is_hate`, and watch-time outcomes must not be used as validation/test input features for predicting `long_view` on the same impression.
+| Tool | Purpose |
+|---|---|
+| `list_columns` | Every column in every CSV, flagged for whether it is legal as a model input |
+| `inspect` | Ask questions of the data — group sizes, label rates, cold-start overlap, cardinality |
+| `build_features` | Build a design matrix from any columns it picks, plus derived fields, video metadata and a dense block over the 51 video-statistics columns |
+| `search_papers` | Search arXiv before proposing a mechanism |
+| `train_model` | Fit a gradient-boosting model, score it, cache the predictions |
+| `blend` | Rank-average cached predictions |
+| `list_predictions` | Everything trained so far this run, with scores |
+| `recall` | Long-term memory: what previous runs already established |
 
-Training-only auxiliary objectives and causally prior historical aggregates may still be valid.
+### Guards
 
-#### Experiment Memory
-Each experiment stores its hypothesis, rationale, research direction, code diff, metrics, decision, diagnostics, recovery events, and relevant resource usage so future research steps can learn from earlier experiments.
+An autonomous agent's worst failure is optimising against its own bug and
+reporting a beautiful number that means nothing. Two things make that
+structurally impossible rather than merely discouraged:
+
+- **The test set is unreachable.** Every read of the raw logs goes through one
+  function, and that function drops test dates. The agent cannot load them even
+  if it asks. Test data is materialised once, after the run is over, by a
+  separate script.
+- **The scorer is checksummed.** `evaluate.py` is hashed at startup and compared
+  against a recorded value. If the file has changed, the run refuses to start.
+
+Post-exposure columns from the same impression — `is_click`, `is_like`,
+`is_comment`, `is_follow`, `is_forward`, `is_hate`, watch time — are marked as
+outcomes and blocked as model inputs. Using them is trivially easy and produces
+GAUC around 0.87 on validation, which is why the block is enforced in code
+rather than left to the model's judgment.
+
+### Memory
+
+Results persist across runs, not just within one. Each attempt records its
+hypothesis, the code, the score, and whether it was accepted. The `recall` tool
+searches that history, so the agent does not spend an iteration re-measuring
+something a previous run already settled.
 
 ---
 
 ## Repository Layout
 
 ```text
-main.py                     entry point for the autonomous research loop
+main.py                     alternative linear loop (see below)
 src/
-├── agents/                 orchestrator, researcher, policy, decision
-├── research_intelligence/  online research, EDA, on-demand skills, knowledge store
-├── tools/                  experiment runner, candidate + integrity validators, metrics
+├── engine/                 the agent described above
+│   ├── agent.py            the loop, drafting phase, convergence rule
+│   ├── tree.py             solution tree, UCB selection
+│   ├── tools.py            the eight tools; the single choke point that hides test
+│   ├── context.py          prompt construction
+│   ├── models.py           CatBoost / LightGBM / XGBoost wrappers
+│   ├── guards.py           checksum and sanity bounds
+│   ├── memory.py           cross-run memory
+│   ├── diagnose.py         per-segment error analysis fed back to the agent
+│   ├── runner.py           subprocess isolation
+│   ├── llm.py              Gemini client with model rotation
+│   ├── finalize.py         one-time test evaluation
+│   └── evidence/           scripts reproducing the measurements quoted here
+├── agents/                 orchestrator, researcher, policy
+├── research_intelligence/  web + arXiv research, EDA, on-demand skills
 ├── memory/                 experiment memory and compressed context
-├── engine/                 tree-search research engine (second track, see below)
-│   ├── evidence/           standalone scripts reproducing the reported measurements
-│   └── state/              live run state (git-ignored)
-├── config.py               paths, loop settings, model selection
-└── schemas.py              typed records exchanged between components
-kuairand-starter-kit/       organiser-provided kit and KuaiRand-Pure data (unmodified)
+├── tools/                  runner, validators, metrics
+├── config.py  schemas.py
+kuairand-starter-kit/       the starter kit and KuaiRand-Pure data, unmodified
 deliverables/submitted-run/ run log, usage, tree and scores for the submitted run
 ```
 
-### Two research engines
+`src/engine/` produced the results reported below.
 
-The repository contains two implementations of the research loop, developed in
-parallel during the hackathon.
-
-`src/` is the system this README describes: a linear, evidence-driven loop with
-online research, on-demand skills, hypothesis ranking and integrity validation.
-
-`src/engine/` is a second engine built around a **solution tree** — it keeps
-several promising branches alive at once and selects the next node to expand
-with UCB, rather than advancing a single line of work. It is the engine that
-produced the numbers recorded in `deliverables/submitted-run/`. Run it with:
-
-```bash
-python src/engine/agent.py
-```
-
-The two share the same starter kit, the same data directory, and the same
-`long_view` target and metrics, so their results are directly comparable. The
-README's *Limitations* section notes that the `src/` search policy "selects one
-hypothesis at a time" and that a stronger version "could maintain a true
-research tree" — `src/engine/` is an implementation of exactly that idea, and
-folding it into the main loop is the clearest next step for this codebase.
+The repo also contains a second, linear loop under `src/agents/` and
+`src/research_intelligence/`, reachable via `main.py`. It adds capabilities the
+engine does not have — live web research and on-demand skill loading — and is
+the natural place to fold the tree search into next.
 
 ---
 
-## Setup and Installation
+## Setup
 
-### 1. Clone the repository
-
-```bash
-git clone <YOUR_REPOSITORY_URL>
-cd TechJam-NextGenZ
-```
-
-### 2. Create a virtual environment
-
-#### Windows PowerShell
-
-```powershell
-python -m venv venv
-.\venv\Scripts\Activate.ps1
-```
-
-#### macOS / Linux
+### 1. Create a virtual environment
 
 ```bash
-python3 -m venv venv
-source venv/bin/activate
+# macOS / Linux
+python3 -m venv venv && source venv/bin/activate
+
+# Windows PowerShell
+python -m venv venv; .\venv\Scripts\Activate.ps1
 ```
 
-### 3. Upgrade pip
+### 2. Install dependencies
 
 ```bash
 python -m pip install --upgrade pip
-```
-
-### 4. Install dependencies
-
-```bash
 pip install -r requirements.txt
 ```
 
-The project uses dependencies for Gemini access, structured validation, web retrieval, HTML parsing, and numerical ML experimentation, including Google GenAI, Pydantic, DDGS, Requests, BeautifulSoup, NumPy, and python-dotenv.
+Gemini access, structured validation, web retrieval, HTML parsing and numerical
+ML: Google GenAI, Pydantic, DDGS, Requests, BeautifulSoup, NumPy, python-dotenv.
 
-### 5. Configure the Gemini API key
+### 3. Add your API key
 
-Create a `.env` file in the project root:
+Create `.env` in the project root:
 
 ```env
 GEMINI_API_KEY=your_api_key_here
 ```
 
-Do not commit `.env` or API credentials to GitHub.
+Never commit `.env`.
 
-### 6. Prepare KuaiRand-Pure
+### 4. Data
 
-Place the required KuaiRand-Pure files under the directory configured by `DATA_DIR` in `src/config.py`.
-
-Expected files include:
+The KuaiRand-Pure CSVs belong in `kuairand-starter-kit/KuaiRand-Pure/data`,
+which is where extracting the kit puts them. That is also the default, so a
+standard checkout needs no configuration. Expected files:
 
 ```text
 log_standard_4_08_to_4_21_pure.csv
@@ -182,238 +209,185 @@ video_features_basic_pure.csv
 video_features_statistic_pure.csv
 ```
 
-Make sure `DATA_DIR` points to the directory containing these files.
-
-`DATA_DIR` defaults to `kuairand-starter-kit/KuaiRand-Pure/data`, which is where
-the extracted kit puts them, so no configuration is needed for a standard
-checkout. Set `DATA_DIR` in `.env` only if the data lives elsewhere.
+Set `DATA_DIR` in `.env` only if they live somewhere else.
 
 ---
 
-## Steps to Reproduce the Results
-
-### 1. Activate the environment
+## Running it
 
 ```bash
-# Windows
-.\venv\Scripts\Activate.ps1
-
-# macOS / Linux
-source venv/bin/activate
+python src/engine/agent.py
 ```
 
-### 2. Run the autonomous research agent
+The run starts by declaring its stopping rule, then reproduces the FM baseline:
 
-From the repository root:
+```text
+convergence_rule_declared  epsilon=0.002  N=3  min_iterations=12
+seed solution: valid primary 0.6015
+DRAFT 1/3 — independent solution, features and model chosen together
+```
+
+Do not pick experiments for it mid-run. The agent uses validation to decide what
+becomes the new best, and repairs its own crashes inside the same iteration.
+The final model is the **validation-best checkpoint**, not the last iteration.
+
+Test evaluation happens once, after the loop stops:
 
 ```bash
-python main.py
+python src/engine/finalize.py
 ```
 
-A successful run begins by reproducing the official FM baseline:
+### Run artefacts
 
-```text
-Starting autonomous ML research session...
-Baseline established: Validation Primary = 0.6015
-```
+State is written to `src/engine/state/` as the run proceeds, so a killed run
+resumes:
 
-The agent then autonomously performs research, EDA, skill loading, hypothesis generation/ranking, coding, validation, training, evaluation, and memory updates.
+- `run_log.jsonl` — the stopping rule, then one record per iteration
+- `state.json` — full loop state, including every attempt
+- `tree.json` — the solution tree
+- `memory.json`, `findings.json` — what carries into later runs
+- `usage.json` — tokens, calls, wall-clock, iterations
+- `best_solution.py` — the winning code
 
-### 3. Allow the loop to converge
+`deliverables/submitted-run/` holds these files for the submitted run.
 
-Do not manually select experiments during the run. The agent uses validation results to decide whether a candidate becomes the new best solution. Technical failures may be repaired automatically within the same scientific iteration.
+---
 
-The final model is the **validation-best checkpoint**, not necessarily the final iteration.
+## Results
 
-### 4. Final test evaluation
-
-After convergence, the system performs a one-time final test evaluation using the validation-best experiment.
-
-Typical output:
-
-```text
-Research session finished.
-Best experiment: <experiment_id>
-Best Validation Primary: <score>
-
-Running final one-time test evaluation...
-Final Test GAUC: <score>
-Final Test nDCG@5: <score>
-Final Test Primary: <score>
-```
-
-### 5. Inspect run artifacts
-
-Each run produces research and experiment logs under `runs/`.
-
-Typical artifacts include:
-
-```text
-runs/
-├── run_<timestamp>/
-│   ├── run_log.jsonl
-│   ├── run_log_full.json
-│   ├── run_log.md
-│   ├── research_knowledge.jsonl
-│   ├── research_trace.jsonl
-│   ├── skill_trace.jsonl
-│   └── debug/
-```
-
-Key files:
-
-- `run_log.jsonl` — append-only per-iteration experiment records.
-- `run_log_full.json` — full exported run history.
-- `run_log.md` — human-readable run summary.
-- `research_knowledge.jsonl` — EDA findings and external research evidence.
-- `research_trace.jsonl` — online-search, source-selection, extraction, and storage trace.
-- `skill_trace.jsonl` — records which skills were loaded and injected.
-- `debug/` — generated candidates, validation failures, verification reports, and repair artifacts.
-
-### Result Reporting
-
-Results below are from the submitted autonomous run, not an intermediate
-development experiment. Raw artefacts are in `deliverables/submitted-run/`.
-
-**KuaiRand-Pure — required benchmark**
+KuaiRand-Pure. Raw artefacts in `deliverables/submitted-run/`.
 
 | | GAUC | nDCG@5 | Primary |
 |---|---:|---:|---:|
-| Official FM baseline — validation<sup>†</sup> | 0.6674 | 0.5357 | 0.6016 |
-| **Validation-best autonomous result** | **0.6723** | **0.5379** | **0.6051** |
-| Official FM baseline — test<sup>†</sup> | 0.6610 | 0.5282 | 0.5946 |
-| **Final one-time test result** | **0.6657** | **0.5304** | **0.5981** |
+| FM baseline — validation<sup>†</sup> | 0.6674 | 0.5357 | 0.6016 |
+| **Validation-best** | **0.6723** | **0.5379** | **0.6051** |
+| FM baseline — test<sup>†</sup> | 0.6610 | 0.5282 | 0.5946 |
+| **Final test (one-time)** | **0.6657** | **0.5304** | **0.5981** |
 
-<sup>†</sup> Baseline figures are the organisers' own, quoted from
+<sup>†</sup> Baseline figures quoted from
 `kuairand-starter-kit/baseline_scores.json`, not re-measured by us.
 
-**Absolute delta over the official baseline** (Judging Criteria formula,
-`½[(GAUC_agent − GAUC_base) + (nDCG_agent − nDCG_base)]`, on the test split):
+**Absolute delta over the baseline**, scoring formula
+`½[(GAUC_agent − GAUC_base) + (nDCG_agent − nDCG_base)]` on test:
 
 ```text
 ½[(0.665747 − 0.6610) + (0.530438 − 0.5282)]  =  +0.003493
 ```
 
-Per-metric: GAUC **+0.0047**, nDCG@5 **+0.0022**. For scale, the organisers
-report a 5-seed baseline standard deviation of 0.0008 on each test metric, and
-an oracle ceiling of 0.8645 test primary — nDCG@5 cannot exceed 0.7289 because
-27.1% of test users are all-negative.
+GAUC **+0.0047**, nDCG@5 **+0.0022**.
 
-The submission file is `deliverables/submitted-run/submission_draft.csv`
-(170,588 rows, `row_id,user_id,video_id,score`). Verify it with:
+For scale: the baseline's own standard deviation over five seeds is 0.0008 on
+each test metric, so this is roughly four to six sigma. A perfect model scores
+0.8645 on test, not 1.0 — nDCG@5 cannot exceed 0.7289 because 27.1% of test
+users have no positive impression at all and score zero no matter what.
+
+Submission file: `deliverables/submitted-run/submission_draft.csv`, 170,588 rows,
+`row_id,user_id,video_id,score`. Check it with:
 
 ```bash
 python kuairand-starter-kit/submit.py --check deliverables/submitted-run/submission_draft.csv
 ```
 
-**Bonus benchmarks** (KuaiRand-1k, KuaiRand-27k) were **not attempted**; no
-outputs are submitted for them.
+**Bonus benchmarks** (KuaiRand-1k, KuaiRand-27k) were **not attempted**.
 
-### Resource Usage
+### Resource usage
 
-Measured for the converged run, from the agent's own accounting in
-`deliverables/submitted-run/usage.json` and `run_log.jsonl`.
+From the agent's own accounting in `deliverables/submitted-run/usage.json`.
 
 | | |
 |---|---:|
-| Total token consumption (input + output) | **418,825** |
-| — input / prompt tokens | 402,598 |
-| — output tokens | 16,227 |
-| — of which served from cache | 106,251 |
+| Total tokens (input + output) | **418,825** |
+| — input | 402,598 |
+| — output | 16,227 |
+| — served from cache | 106,251 |
 | LLM calls | 67 |
-| Total agent wall-clock | **120.6 min** (≈2.0 h) |
+| Wall-clock | **120.6 min** |
 | Iterations used (cap 50) | **12** |
-| GPU-hours | **0** — CPU only, no GPU used |
+| GPU-hours | **0** — CPU only |
 | Manual interventions | 0 |
 
-The run declared its convergence rule before starting (`epsilon` 0.002, `N` 3,
-minimum 12 iterations, self-imposed caps of 40 iterations / 300 min, all within
-the organisers' 50-iteration / 6-hour limits). The declaration is the first
-record in `run_log.jsonl`.
+The stopping rule was declared before the run started — epsilon 0.002, N 3,
+minimum 12 iterations, self-imposed caps of 40 iterations and 300 minutes, both
+inside the 50-iteration and 6-hour limits. It is the first line of
+`run_log.jsonl`. Crashed iterations count toward the caps but do not advance the
+convergence window, so a run cannot stop early by failing.
 
 ---
 
-## Limitations and Future Improvements
+## Limitations
 
-The current system demonstrates an end-to-end autonomous ML research loop, but several limitations remain.
+**The feature representation is the ceiling, and we only partly moved it.** The
+diagnostic that shaped this design showed no model beats the FM on the five
+given fields. Three drafts found better feature sets, but the search over
+feature space is still shallow — it is the highest-value direction left.
 
-**Retrieval quality is imperfect.** Search engines may return irrelevant or inaccessible sources. Relevance filtering helps, but future work could improve query reformulation, domain-aware retrieval, GitHub/code search, PDF parsing, and source-quality scoring.
+**One seed.** The reported run is a single seed. With noise at 0.0008 per metric
+the gain is well clear of it, but a multi-seed ensemble would be both stronger
+and better evidenced.
 
-**Hypothesis ranking remains partly LLM-dependent.** Although candidates are scored on explicit criteria, the criterion values are still model judgments. With more time, we would calibrate ranking using historical experiment outcomes.
+**No live web research in the loop that produced these numbers.** The engine can
+search arXiv, and did so once during the submitted run. The richer research
+stack under `src/research_intelligence/` is not wired into it yet.
 
-**EDA coverage can be expanded.** Additional tools for feature-target relationships, hard-negative structure, temporal drift, popularity bias, and historical-signal construction could make hypotheses more dataset-specific.
+**Free-tier quota shapes the run.** The LLM rotates across five Gemini models
+because each has a small daily limit. Runs can end on quota rather than on
+convergence, which is a practical constraint, not a scientific one.
 
-**The search policy is still relatively shallow.** The current loop selects one hypothesis at a time. A stronger version could maintain a true research tree, preserve multiple promising branches, and allocate experiment budget using a more advanced explore/exploit strategy.
-
-**Cross-session memory is still early-stage.** Future versions could better separate general research knowledge from benchmark-specific findings, detect contradictions, consolidate duplicate sources, and learn from experiment outcomes across runs.
-
-**Generated code can still fail.** LLM-generated candidates may contain incorrect assumptions about fields, APIs, or the existing baseline implementation. More unit-test generation, schema-aware constraints, and stronger sandbox checks would improve reliability.
-
-**Model/API availability affects runtime.** Rate limits, model capacity, and network latency can slow autonomous runs. Retry logic, fallback models, checkpoint/resume, and lightweight models for extraction/verification are natural improvements.
-
-**Compute-aware research can be improved.** A future version could allocate an explicit token/compute budget across research, coding, and experiments and optimize expected score improvement per unit cost.
-
----
-
-## Team Member Contributions
-
-### Charlton
-- Agent architecture and orchestration.
-- Autonomous research workflow and Researcher–Coder separation.
-- Online research integration and research-action routing.
-- Multi-hypothesis generation and ranking workflow.
-- Research-integrity / leakage controls.
-- Integration of team components into the end-to-end system.
-
-### David
-- Co-developed the agent/orchestration and research-tool components.
-- Contributed to the autonomous research workflow and experiment-loop design.
-- Supported integration and debugging of the end-to-end system.
-
-### Hayden
-- Developed early MLE / research-intelligence work that informed the current system.
-- Contributed procedural skills, EDA/recommender-system intelligence, and supporting tools.
-- Contributed to implementation and evaluation utilities during development.
-
-### Esther
-- Developed the memory component for persistent experiment history.
-- Designed experiment records and compressed context for later Researcher calls.
-- Supported persistence of hypotheses, code changes, metrics, diagnostics, and recovery information.
+**Repair is shallow.** Crashes get three attempts with shrinking timeouts. A
+genuinely subtle bug in generated code will usually just cost the iteration.
 
 ---
 
-## Benchmark Integrity
+## Benchmark integrity
 
-The target is `long_view`, and evaluation is based on ranking within each user's logged impressions.
+The target is `long_view`, scored by ranking within each user's impressions.
 
-A valid auxiliary-training setup may look like:
+Legal:
 
 ```text
-training is_click
-    ↓
-auxiliary training loss
-    ↓
-shared representation
-    ↓
-validation/test prediction using legal prediction-time inputs
+training-time is_click  →  auxiliary loss  →  shared representation
+                                                     ↓
+                            validation/test prediction from legal inputs only
 ```
 
-An invalid setup is:
+Not legal:
 
 ```text
-validation/test is_click
-    ↓
-input feature
-    ↓
-predict long_view for the same impression
+validation/test is_click  →  input feature  →  predict long_view, same impression
 ```
 
-The objective is not only to obtain a high score, but to obtain it through a reproducible and scientifically valid autonomous research process.
+The distinction is enforced in `src/engine/tools.py`, not left to judgment. The
+same rule governs history features: an aggregate over a user's *earlier* rows is
+fine, but it must not be built from labels in the evaluation period.
+
+The goal is a score that comes from a reproducible, honest search — not just a
+high number.
+
+---
+
+## Team
+
+**Hayden** — the research engine in `src/engine/`: tool layer, solution tree and
+UCB selection, drafting phase, leakage guards, cross-run memory, diagnostics,
+and the measurements the design is based on. Produced the submitted result.
+
+**Charlton** — agent architecture and orchestration, researcher/coder
+separation, online research integration, multi-hypothesis generation and
+ranking, research-integrity controls, system integration.
+
+**David** — co-developed the orchestration and research tooling, the autonomous
+research workflow and experiment-loop design; integration and debugging.
+
+**Esther** — the memory component: experiment records, compressed context for
+later researcher calls, persistence of hypotheses, code changes, metrics,
+diagnostics and recovery information.
 
 ---
 
 ## Acknowledgements
 
-This project was developed for the TikTok TechJam 2026 Autonomous ML Research Agent challenge and uses the organizer-provided KuaiRand starter kit and KuaiRand-Pure benchmark.
-
-The design is informed by broader autonomous-ML research ideas such as evidence-driven experimentation, experiment memory, code optimization, and search over research directions.
+Built for TikTok TechJam 2026 on the provided KuaiRand starter kit and the
+KuaiRand-Pure benchmark. The drafting policy follows AIDE (arXiv:2502.13138),
+whose stated approach is to "first explore a set of diverse initial solutions
+and continuously improve the best one" — we had implemented only the second
+half, and measuring that gap is what produced the result above.
