@@ -112,7 +112,35 @@ class Tree:
         return n
 
     # --------------------------------------------------------- select
+    def _refresh_dead(self) -> None:
+        """Re-evaluate every node's dead flag against the CURRENT incumbent.
+
+        `dead` used to be computed once, when a node was added, and never
+        revisited. That is wrong in both directions as the incumbent moves:
+
+          * a node 0.0096 below a 0.6015 incumbent was marked alive; once the
+            incumbent reached 0.6037 its deficit was 0.0118, past the cap, yet
+            it stayed selectable and consumed a 9-minute iteration
+          * conversely a branch killed early - because the agent's first
+            implementation of it was poor - stayed dead forever, even across
+            runs, closing off a model family on the strength of one bad attempt
+
+        Recomputing makes the cap mean what it says at all times, and lets a
+        branch come back if the incumbent it was measured against was itself
+        weak.
+        """
+        best_p = max(n["primary"] for n in self.nodes)
+        changed = False
+        for n in self.nodes:
+            now_dead = n["primary"] < best_p - MAX_DEFICIT
+            if now_dead != n["dead"]:
+                n["dead"] = now_dead
+                changed = True
+        if changed:
+            self.save()
+
     def select(self) -> dict:
+        self._refresh_dead()
         """Pick the node to expand next.
 
         UCB-style: value is how close the node is to the incumbent, exploration

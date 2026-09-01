@@ -1,0 +1,536 @@
+[
+  {
+    "id": "m001",
+    "mechanism": "Replaced BCEWithLogitsLoss with a BPR objective that samples one negative instance per positive instance per batch for every user, optimizing the model's ability to rank observed positives above random negatives.",
+    "delta": -0.0078,
+    "seeds": 1,
+    "verdict": "NEGATIVE",
+    "confidence": "low (single seed, unreplicated - historically wrong by 2-4x)",
+    "source": "agent",
+    "iteration": 1,
+    "date": "2026-08-30",
+    "tags": [
+      "loss"
+    ],
+    "superseded_by": null,
+    "note": "Replacing the binary point-wise BCE loss with a Bayesian Personalized Ranking (BPR) loss will improve GAUC and nDCG, as BPR directly optimizes for the relative ordering of items within a user's session, which is precisely the task metric."
+  },
+  {
+    "id": "m002",
+    "mechanism": "Expanded feature set to include author_id, music_id, tag, and video statistics (Dtr/Dva dense blocks) while maintaining the original FM architecture structure.",
+    "delta": -0.0375,
+    "seeds": 1,
+    "verdict": "NEGATIVE",
+    "confidence": "low (single seed, unreplicated - historically wrong by 2-4x)",
+    "source": "agent",
+    "iteration": 2,
+    "date": "2026-08-30",
+    "tags": [
+      "features",
+      "architecture"
+    ],
+    "superseded_by": null,
+    "note": "Incorporating rich categorical signals (author_id, music_id, tag) and dense video statistics significantly increases model expressivity, which should mitigate underfitting observed in the base 5-field Factorization Machine. By leveraging video metadata that describes content properties, the model ca"
+  },
+  {
+    "id": "m003",
+    "mechanism": "Replaced the BPR pair-wise loss with a weighted Binary Cross-Entropy loss in the training loop, effectively treating the recommendation as a classification problem with class balancing.",
+    "delta": 0.0022,
+    "seeds": 1,
+    "verdict": "POSITIVE",
+    "confidence": "low (single seed, unreplicated - historically wrong by 2-4x)",
+    "source": "agent",
+    "iteration": 3,
+    "date": "2026-08-30",
+    "tags": [
+      "loss",
+      "architecture"
+    ],
+    "superseded_by": null,
+    "note": "The BPR loss failed previously because random negative sampling is too noisy for short, highly skewed user sessions. Using a point-wise Binary Cross-Entropy (BCE) loss while weighting positive samples (the 'pos-weight' mechanism) will stabilize training by giving equal importance to positive and neg"
+  },
+  {
+    "id": "m004",
+    "mechanism": "Added a nn.Embedding(dim=1) to the Factorization Machine to learn a specific bias term for every user_id, which is added to the logit before the activation.",
+    "delta": -0.0012,
+    "seeds": 1,
+    "verdict": "NEGATIVE",
+    "confidence": "none (single seed, within noise - indistinguishable from zero)",
+    "source": "agent",
+    "iteration": 4,
+    "date": "2026-08-30",
+    "tags": [
+      "other"
+    ],
+    "superseded_by": null,
+    "note": "The regression on cold-start users is driven by the global model's inability to account for the highly varying base conversion rates across users. By adding a learned, per-user bias term (a scalar bias for each user_id), the model can adapt its predictions to individual user activity levels without "
+  },
+  {
+    "id": "m005",
+    "mechanism": "Extended the FM architecture to include a dual-head output: a shared embedding space feeding a primary 'long_view' head and an auxiliary 'is_click' head, optimized via a weighted combination of BCE losses.",
+    "delta": -0.0015,
+    "seeds": 1,
+    "verdict": "NEGATIVE",
+    "confidence": "none (single seed, within noise - indistinguishable from zero)",
+    "source": "agent",
+    "iteration": 6,
+    "date": "2026-08-30",
+    "tags": [
+      "loss",
+      "architecture",
+      "multitask"
+    ],
+    "superseded_by": null,
+    "note": "Incorporating 'is_click' as an auxiliary multi-task supervision signal will stabilize gradient updates and improve feature representation, as 'is_click' is a denser and highly correlated precursor to 'long_view' compared to the sparse primary label."
+  },
+  {
+    "id": "m006",
+    "mechanism": "Replaced 'aux_is_click' binary BCE head with an auxiliary MSE regression head on log-normalized 'play_time_ms'.",
+    "delta": -0.0021,
+    "seeds": 1,
+    "verdict": "NEGATIVE",
+    "confidence": "low (single seed, unreplicated - historically wrong by 2-4x)",
+    "source": "agent",
+    "iteration": 1,
+    "date": "2026-08-30",
+    "tags": [
+      "multitask"
+    ],
+    "superseded_by": null,
+    "note": "I will replace the auxiliary 'is_click' signal in the dual-head FM with a normalized 'play_time_ms' (as a regression target). Since long_view is a subset of watch time, 'play_time_ms' provides a richer, continuous signal that constrains the shared embedding space more effectively than the sparse bin"
+  },
+  {
+    "id": "m007",
+    "mechanism": "Added a dedicated user_embedding lookup to the FM model to compute a user-specific bias term in addition to the standard feature interactions, providing better individual ranking resolution.",
+    "delta": -0.0011,
+    "seeds": 3,
+    "verdict": "NEGATIVE",
+    "confidence": "medium (replicated, within noise)",
+    "source": "agent",
+    "iteration": 2,
+    "date": "2026-08-30",
+    "tags": [
+      "features",
+      "architecture"
+    ],
+    "superseded_by": null,
+    "note": "The current FM model uses a static global bias for all users, failing to capture individual-specific affinity for long_view which is crucial for ranking, especially for users with short or cold-start histories. By replacing the global bias with an per-user embedding and a learnable user-specific bia"
+  },
+  {
+    "id": "m008",
+    "mechanism": "Replaced the standard scalar output and BCE loss with a Softmax-normalized ranking objective where we compute probabilities within each user's batch and minimize the negative log-likelihood of the observed positives.",
+    "delta": -0.0064,
+    "seeds": 1,
+    "verdict": "NEGATIVE",
+    "confidence": "low (single seed, unreplicated - historically wrong by 2-4x)",
+    "source": "agent",
+    "iteration": 3,
+    "date": "2026-08-30",
+    "tags": [
+      "loss"
+    ],
+    "superseded_by": null,
+    "note": "I will replace the global Bias term and User-Bias Embedding with a Group-Aware Softmax layer that normalizes scores within each user's session. This focuses the model directly on the relative ranking task (nDCG/GAUC) instead of absolute relevance regression, effectively ignoring cross-user absolute "
+  },
+  {
+    "id": "m009",
+    "mechanism": "Replaced the standard FM model with a Field-aware Factorization Machine (FFM) implementation, where each feature has multiple latent vectors (one for each input field) to capture cross-field interactions.",
+    "delta": -0.0006,
+    "seeds": 1,
+    "verdict": "NEUTRAL",
+    "confidence": "none (single seed, within noise - indistinguishable from zero)",
+    "source": "agent",
+    "iteration": 4,
+    "date": "2026-08-30",
+    "tags": [
+      "features",
+      "architecture"
+    ],
+    "superseded_by": null,
+    "note": "The current model uses a simple FM to map static features, but fails to capture the temporal evolution of user interests. I will implement a 'Field-aware Factorization Machine' (FFM) architecture where the latent interaction vectors are conditioned on the field of the other feature, which explicitly"
+  },
+  {
+    "id": "m010",
+    "mechanism": "Replaced FM model and PyTorch BCE loss loop with CatBoostRanker using YetiRank loss grouped by user_id.",
+    "delta": -0.0054,
+    "seeds": 1,
+    "verdict": "NEGATIVE",
+    "confidence": "low (single seed, unreplicated - historically wrong by 2-4x)",
+    "source": "agent",
+    "iteration": 1,
+    "date": "2026-08-31",
+    "tags": [
+      "loss",
+      "architecture"
+    ],
+    "superseded_by": null,
+    "note": "Replacing pointwise BCE logit optimization with a listwise GBDT ranker (CatBoost with YetiRank loss grouped by user_id) directly aligns training with intra-user metric evaluation. Pointwise loss wastes model capacity on cross-user score calibration, whereas listwise ranking optimizes candidate relat"
+  },
+  {
+    "id": "m011",
+    "mechanism": "Incorporate cb_features_v1 (102 dense video statistics Dtr/Dva combined with categorical features Xtr/Xva) into CatBoostRanker.",
+    "delta": -0.0096,
+    "seeds": 1,
+    "verdict": "NEGATIVE",
+    "confidence": "low (single seed, unreplicated - historically wrong by 2-4x)",
+    "source": "agent",
+    "iteration": 2,
+    "date": "2026-08-31",
+    "tags": [
+      "features",
+      "architecture"
+    ],
+    "superseded_by": null,
+    "note": "Tree-based ranking models like CatBoost require continuous item interaction and quality statistics (Dtr/Dva) alongside categorical metadata (Xtr/Xva) to split effectively, because decision trees cannot generalize on sparse categorical IDs alone. Combining dense video statistics with categorical feat"
+  },
+  {
+    "id": "m012",
+    "mechanism": "Weight training BCE loss per sample inversely by the square root of the user's training impression count.",
+    "delta": -0.0016,
+    "seeds": 1,
+    "verdict": "NEGATIVE",
+    "confidence": "low (single seed, unreplicated - historically wrong by 2-4x)",
+    "source": "agent",
+    "iteration": 3,
+    "date": "2026-08-31",
+    "tags": [
+      "loss"
+    ],
+    "superseded_by": null,
+    "note": "Weighting training loss per sample inversely with the square root of the user's impression count (w_i proportional to N_{u_i}^{-0.5}) aligns the model's training objective with the per-user evaluation metric, preventing heavy-history users from dominating gradient updates."
+  },
+  {
+    "id": "m013",
+    "mechanism": "Train a 5-seed ensemble of FM models, apply per-user percentile rank transforms to each model's validation predictions, and average the rank scores across seeds.",
+    "delta": 0.0012,
+    "seeds": 3,
+    "verdict": "POSITIVE",
+    "confidence": "medium (replicated, within noise)",
+    "source": "agent",
+    "iteration": 4,
+    "date": "2026-08-31",
+    "tags": [
+      "features",
+      "architecture",
+      "ensembling"
+    ],
+    "superseded_by": null,
+    "note": "Ensembling predictions across multiple independent initialization seeds via per-user percentile rank averaging reduces model variance while maintaining scale invariant relative ordering, yielding superior within-user GAUC and nDCG@5."
+  },
+  {
+    "id": "m014",
+    "mechanism": "Replace single FM model architecture in the 5-seed rank-averaged ensemble with a DeepFM (FM + MLP) architecture.",
+    "delta": 0.0011,
+    "seeds": 3,
+    "verdict": "POSITIVE",
+    "confidence": "medium (replicated, within noise)",
+    "source": "agent",
+    "iteration": 5,
+    "date": "2026-08-31",
+    "tags": [
+      "features",
+      "architecture",
+      "ensembling"
+    ],
+    "superseded_by": null,
+    "note": "Standard FM models only linear 1st-order terms and 2-way dot-product interactions between feature fields. Replacing FM with a DeepFM architecture (coupling FM's low-order interaction head with a multi-layer perceptron over concatenated field embeddings) allows the model to learn high-order non-linea"
+  },
+  {
+    "id": "m015",
+    "mechanism": "Added CosineAnnealingLR learning rate scheduling over 25 epochs and unified all parameters into Adam optimizer for each DeepFM seed.",
+    "delta": -0.0001,
+    "seeds": 1,
+    "verdict": "NEUTRAL",
+    "confidence": "none (single seed, within noise - indistinguishable from zero)",
+    "source": "agent",
+    "iteration": 6,
+    "date": "2026-08-31",
+    "tags": [
+      "architecture",
+      "ensembling",
+      "tuning"
+    ],
+    "superseded_by": null,
+    "note": "Fixed learning rate optimization in DeepFM causes gradient update noise around local minima, leading to premature early stopping. Introducing a Cosine Annealing learning rate schedule over 25 epochs alongside unified Adam optimization for all parameters (including global bias) will reduce late-stage"
+  },
+  {
+    "id": "m016",
+    "mechanism": "Introduced user-level label propensity weighting to the binary cross-entropy loss function during training.",
+    "delta": -0.0007,
+    "seeds": 1,
+    "verdict": "NEUTRAL",
+    "confidence": "none (single seed, within noise - indistinguishable from zero)",
+    "source": "agent",
+    "iteration": 7,
+    "date": "2026-08-31",
+    "tags": [
+      "loss",
+      "architecture"
+    ],
+    "superseded_by": null,
+    "note": "Weighting the training loss by the user's historical propensity to watch videos (mean long_view rate) will regularize the model against bias towards users with higher baseline activity, thereby improving GAUC by focusing on discriminating within user groups that are otherwise overwhelmed by the glob"
+  },
+  {
+    "id": "m017",
+    "mechanism": "Replaced BCEWithLogitsLoss with a Bayesian Personalized Ranking (BPR) loss function for pairwise intra-user optimization.",
+    "delta": -0.0,
+    "seeds": 1,
+    "verdict": "NEUTRAL",
+    "confidence": "none (single seed, within noise - indistinguishable from zero)",
+    "source": "agent",
+    "iteration": 8,
+    "date": "2026-08-31",
+    "tags": [
+      "loss"
+    ],
+    "superseded_by": null,
+    "note": "Instead of weighting BCE loss by inverse historical propensity (which failed), we replace the standard BCE objective with a Pairwise Ranking Loss (BPR) applied to every possible positive-negative pair within each user's history, effectively optimizing the model for relative ordering rather than abso"
+  },
+  {
+    "id": "m018",
+    "mechanism": "Added a per-user-group frequency-dependent dropout rate in the MLP layers; users with < 20 impressions in the training set now trigger a higher dropout probability (0.3) in the MLP to regularize learning for sparse data, while others remain at 0.1.",
+    "delta": -0.0001,
+    "seeds": 1,
+    "verdict": "NEUTRAL",
+    "confidence": "none (single seed, within noise - indistinguishable from zero)",
+    "source": "agent",
+    "iteration": 9,
+    "date": "2026-08-31",
+    "tags": [
+      "architecture"
+    ],
+    "superseded_by": null,
+    "note": "Incorporating user-group-aware dropout in the deep MLP layers of the DeepFM architecture will improve generalization for users with sparse impression counts (cold-start) by preventing the model from overfitting to the limited samples of high-frequency users."
+  },
+  {
+    "id": "m019",
+    "mechanism": "Replace the static user_id embedding in DeepFM with a dynamic 'user-content-proxy' vector calculated as the running average of the video embeddings the user has interacted with within the current batch, essentially implementing a simple Attention mechanism without learning new weights.",
+    "delta": -0.0005,
+    "seeds": 1,
+    "verdict": "NEUTRAL",
+    "confidence": "none (single seed, within noise - indistinguishable from zero)",
+    "source": "agent",
+    "iteration": 10,
+    "date": "2026-08-31",
+    "tags": [
+      "features",
+      "architecture",
+      "ensembling"
+    ],
+    "superseded_by": null,
+    "note": "The current DeepFM model relies heavily on sparse user ID features that are poorly generalized for low-impression users. By replacing simple concatenation of embeddings with a Weighted Mean Pooling (WMP) of the video features (item metadata) watched by a user within the current batch, we provide a d"
+  },
+  {
+    "id": "m020",
+    "mechanism": "Injected a dedicated nn.Embedding layer for user_id to compute an explicit per-user bias, which is added to the DeepFM logit output before the final sigmoid, decoupling individual baseline preference from interaction-based ranking.",
+    "delta": -0.0004,
+    "seeds": 1,
+    "verdict": "NEUTRAL",
+    "confidence": "none (single seed, within noise - indistinguishable from zero)",
+    "source": "agent",
+    "iteration": 11,
+    "date": "2026-08-31",
+    "tags": [
+      "architecture"
+    ],
+    "superseded_by": null,
+    "note": "The current model uses a shared embedding table which fails to differentiate between users with drastically different activity levels, leading to poor performance on short-history users. I will implement a dual-tower architecture within the DeepFM model where a separate user-bias embedding is learne"
+  },
+  {
+    "id": "m021",
+    "mechanism": "Incorporate a per-sample weight into the BPR loss function that scales inversely with user history length, specifically penalizing models that ignore low-activity users.",
+    "delta": -0.0009,
+    "seeds": 1,
+    "verdict": "NEUTRAL",
+    "confidence": "none (single seed, within noise - indistinguishable from zero)",
+    "source": "agent",
+    "iteration": 12,
+    "date": "2026-08-31",
+    "tags": [
+      "loss",
+      "features"
+    ],
+    "superseded_by": null,
+    "note": "Weighting the training loss by the relative importance of positive vs negative samples using a focal-like modification to the BPR objective will help focus the model on 'hard' discriminative examples, specifically improving the ranking for users who have limited history (cold/short)."
+  },
+  {
+    "id": "m022",
+    "mechanism": "Added per-user Z-score normalization of model scores in the validation loop.",
+    "delta": -0.0009,
+    "seeds": 1,
+    "verdict": "NEUTRAL",
+    "confidence": "none (single seed, within noise - indistinguishable from zero)",
+    "source": "agent",
+    "iteration": 13,
+    "date": "2026-08-31",
+    "tags": [
+      "other"
+    ],
+    "superseded_by": null,
+    "note": "Instead of using raw logits, we apply per-user Z-score normalization to the output scores during inference. This mitigates the impact of inconsistent logit scales across different users, which currently causes the model to underperform on users with short history (where absolute logit calibration is"
+  },
+  {
+    "id": "m023",
+    "mechanism": "Expanded model input fields from 5 to 7 by including 'author_id' and 'music_id', updating the embedding table vocabulary size to accommodate new field cardinalities.",
+    "delta": -0.0056,
+    "seeds": 1,
+    "verdict": "NEGATIVE",
+    "confidence": "low (single seed, unreplicated - historically wrong by 2-4x)",
+    "source": "agent",
+    "iteration": 14,
+    "date": "2026-08-31",
+    "tags": [
+      "features"
+    ],
+    "superseded_by": null,
+    "note": "I will incorporate the author_id and music_id features into the DeepFM architecture by expanding the embedding layer and embedding table size, allowing the model to capture item-creator and item-music relationships which are key signals for distinguishing video content, especially for cold-start use"
+  },
+  {
+    "id": "m024",
+    "mechanism": "Change CatBoostRanker loss_function from YetiRank to QuerySoftMax.",
+    "delta": -0.0113,
+    "seeds": 1,
+    "verdict": "NEGATIVE",
+    "confidence": "low (single seed, unreplicated - historically wrong by 2-4x)",
+    "source": "agent",
+    "iteration": 15,
+    "date": "2026-08-31",
+    "tags": [
+      "loss",
+      "architecture"
+    ],
+    "superseded_by": null,
+    "note": "YetiRank's default settings can overemphasize the top portion of the ranking list of large groups, whereas QuerySoftMax focuses more on optimizing the entire group probability distribution. We hypothesize that using QuerySoftMax as the ranking loss function will improve intra-user ranking performanc"
+  },
+  {
+    "id": "m025",
+    "mechanism": "Replaced randomly generated feature columns with real author_id, music_id, tag, hour, dur_bucket, and video_age features derived using the build_features tool.",
+    "delta": -0.0013,
+    "seeds": 1,
+    "verdict": "NEGATIVE",
+    "confidence": "none (single seed, within noise - indistinguishable from zero)",
+    "source": "agent",
+    "iteration": 16,
+    "date": "2026-08-31",
+    "tags": [
+      "features"
+    ],
+    "superseded_by": null,
+    "note": "The poor performance of the previous iteration was likely due to the use of random noise features for author_id and music_id. By using the official build_features tool to incorporate these as grounded categorical features, the model can actually learn item-creator and item-music interactions, which "
+  },
+  {
+    "id": "m026",
+    "mechanism": "Incorporate sample-level Inverse Propensity Score weighting into the BCEWithLogitsLoss function based on the log-frequency of user history to rebalance training gradients.",
+    "delta": -0.0,
+    "seeds": 1,
+    "verdict": "NEUTRAL",
+    "confidence": "none (single seed, within noise - indistinguishable from zero)",
+    "source": "agent",
+    "iteration": 18,
+    "date": "2026-08-31",
+    "tags": [
+      "loss",
+      "features"
+    ],
+    "superseded_by": null,
+    "note": "Weighting the training loss by the Inverse Propensity Score (IPS) of the user's activity levels will reduce the model's bias towards 'heavy' users, allowing it to generalize better across the entire user population."
+  },
+  {
+    "id": "m027",
+    "mechanism": "Adjusted weight decay on embedding parameters to 1e-4 (from 1e-6) and decreased learning rate to 0.0005 to slow down convergence and regularize the large embedding parameter space.",
+    "delta": -0.0006,
+    "seeds": 1,
+    "verdict": "NEUTRAL",
+    "confidence": "none (single seed, within noise - indistinguishable from zero)",
+    "source": "agent",
+    "iteration": 19,
+    "date": "2026-08-31",
+    "tags": [
+      "tuning"
+    ],
+    "superseded_by": null,
+    "note": "The rapid overfitting (peak at epoch 3) is driven by the vast discrepancy in user history lengths between training (median 31) and validation (median 4), which causes the model to overfit on the high-activity training distribution. I will introduce early stopping with a smaller validation split and "
+  },
+  {
+    "id": "m028",
+    "mechanism": "Added a smoothed per-user label propensity bias to the logit output of the DeepFM model, using training-set label statistics as a prior.",
+    "delta": -0.0035,
+    "seeds": 1,
+    "verdict": "NEGATIVE",
+    "confidence": "low (single seed, unreplicated - historically wrong by 2-4x)",
+    "source": "agent",
+    "iteration": 20,
+    "date": "2026-08-31",
+    "tags": [
+      "features",
+      "architecture"
+    ],
+    "superseded_by": null,
+    "note": "Apply a per-user logit scaling factor derived from the user's historical label rate to calibrate scores toward the user's base propensity, effectively helping the model distinguish between 'all-negative' or 'all-positive' users (which comprise ~42% of valid users) and others."
+  },
+  {
+    "id": "m029",
+    "mechanism": "Replaced the static additive user_id bias with a learnable user embedding dimension that contributes to the interaction term of the FM component.",
+    "delta": -0.0025,
+    "seeds": 1,
+    "verdict": "NEGATIVE",
+    "confidence": "low (single seed, unreplicated - historically wrong by 2-4x)",
+    "source": "agent",
+    "iteration": 21,
+    "date": "2026-08-31",
+    "tags": [
+      "features",
+      "architecture"
+    ],
+    "superseded_by": null,
+    "note": "The poor performance on 'long-history' users is due to the static user_id bias overwhelming the signal from content features for users with high activity. I will replace the global user-specific bias with a learnable user embedding that interacts with the video embeddings, rather than just adding it"
+  },
+  {
+    "id": "m030",
+    "mechanism": "Replaced BCEWithLogitsLoss with a Softmax-based ListNet ranking loss (Group-Softmax).",
+    "delta": -0.0143,
+    "seeds": 1,
+    "verdict": "NEGATIVE",
+    "confidence": "low (single seed, unreplicated - historically wrong by 2-4x)",
+    "source": "agent",
+    "iteration": 22,
+    "date": "2026-08-31",
+    "tags": [
+      "loss"
+    ],
+    "superseded_by": null,
+    "note": "I will replace the per-user rank-average ensemble with a single-model training process using a ListNet-like objective (softmax over logits per user group). This shifts the training target from point-wise BCE (which learns absolute probabilities) to relative ranking, which is mathematically more cons"
+  },
+  {
+    "id": "m031",
+    "mechanism": "Added a residual connection (input of MLP to its output) in the DeepFM architecture, effectively turning the MLP into a residual network.",
+    "delta": 0.0002,
+    "seeds": 3,
+    "verdict": "NEUTRAL",
+    "confidence": "medium (replicated, within noise)",
+    "source": "agent",
+    "iteration": 23,
+    "date": "2026-08-31",
+    "tags": [
+      "architecture"
+    ],
+    "superseded_by": null,
+    "note": "I will incorporate a residual connection to the DeepFM MLP, allowing the model to combine high-order feature interactions learned through the MLP directly with the shallow FM components, mitigating potential gradient vanishing and improving the representation of complex feature interactions."
+  },
+  {
+    "id": "m032",
+    "mechanism": "Added a 0.2 dropout rate to the FM interaction component to stabilize training and prevent early-epoch overfitting.",
+    "delta": 0.0003,
+    "seeds": 3,
+    "verdict": "NEUTRAL",
+    "confidence": "medium (replicated, within noise)",
+    "source": "agent",
+    "iteration": 24,
+    "date": "2026-08-31",
+    "tags": [
+      "architecture"
+    ],
+    "superseded_by": null,
+    "note": "I will implement a Dropout-based regularization on the FM interaction terms to prevent overfitting on the dense embedding space, as the model's current tendency to reach peak performance at epoch 2 suggests an inability to generalize from sparse user activity in the training set."
+  }
+]

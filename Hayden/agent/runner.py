@@ -89,7 +89,18 @@ class Runner:
         self.work = workdir or WORK
         self.work.mkdir(parents=True, exist_ok=True)
 
-    def run_code(self, code: str, iteration: int, seed: int = 0) -> RunResult:
+    def run_code(self, code: str, iteration: int, seed: int = 0,
+                 timeout_s: int = None) -> RunResult:
+        """Run one candidate. `timeout_s` overrides the default for this call.
+
+        The caller shrinks it on a repair after a timeout. Previously every
+        repair attempt got the full budget again, so a single pathological
+        candidate could burn 3 x 1200s and return nothing: the recovery
+        instruction asks the model to reduce epochs, but nothing enforced it.
+        The baseline finishes in 8 seconds, so a candidate that needed more than
+        the full budget should have to prove it is faster in a much smaller one.
+        """
+        limit = timeout_s or self.timeout_s
         d = self.work / f"iter_{iteration:03d}_seed{seed}"
         if d.exists():
             shutil.rmtree(d)
@@ -102,7 +113,7 @@ class Runner:
         try:
             p = subprocess.run(
                 [PY, str(HERE / "worker.py"), str(cand), str(d), str(seed)],
-                capture_output=True, text=True, timeout=self.timeout_s,
+                capture_output=True, text=True, timeout=limit,
             )
             out, err, rc = p.stdout, p.stderr, p.returncode
             killed = rc < 0                                 # signal (e.g. OOM kill)
@@ -125,7 +136,7 @@ class Runner:
         return RunResult(
             ok=False, iteration=iteration, seed=seed, secs=secs,
             error_type=res.get("error_type") or ("Timeout" if timed_out else "ProcessFailure"),
-            error=res.get("error") or (f"exceeded {self.timeout_s}s" if timed_out else err[-500:]),
+            error=res.get("error") or (f"exceeded {limit}s" if timed_out else err[-500:]),
             traceback=res.get("traceback"), failure_class=fclass, recovery=recovery,
             stdout=out[-3000:], stderr=err[-3000:],
         )

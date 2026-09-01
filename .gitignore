@@ -94,3 +94,28 @@ catboost_info/
 */agent/state/submission_blend.csv
 */agent/state/submission_gauc.csv
 */agent/state/submission_big_*.csv
+
+# =========================
+# Per-run agent state  (added 2026-08-31)
+# =========================
+# These change on every run. Committing them means a teammate's pull inherits
+# someone else's search tree and memory, their run then overwrites the files,
+# and every pull conflicts. Each person's runs should be their own.
+# The run log is a required deliverable - snapshot it into deliverables/ when a
+# run is one you want to submit, rather than tracking the live file.
+*/agent/state/tree.json
+*/agent/state/tree.*.json
+*/agent/state/memory.json
+*/agent/state/state.json
+*/agent/state/stages.json
+*/agent/state/findings.json
+*/agent/state/run_log.jsonl
+*/agent/state/best_solution.py
+*/agent/state/usage.json
+*/agent/state/evaluate.sha256
+
+# One starter kit at the repo root; the tarball is 45M and re-downloadable.
+kuairand-starter-kit/KuaiRand-Pure.tar.gz
+Hayden/kuairand-starter-kit/
+*/agent/state/findings.*.json
+*/agent/context.py.bloated

@@ -223,11 +223,18 @@ def build_features(spec: dict) -> dict:
     # to see why. Two iterations were lost to that.
     cats = _listify(spec.get("categorical") or spec.get("fields")
                     or spec.get("extra_fields") or spec.get("features")
-                    or spec.get("categorical_features"))
+                    or spec.get("categorical_features")
+                    or spec.get("columns"))
     derived = _listify(spec.get("derived"))
     vmeta = _listify(spec.get("video_meta") or spec.get("video_metadata"))
+    # `dense_block` is included because that is the key this function RETURNS
+    # for the dense matrix, so it is the name the caller sees first and the
+    # obvious thing to pass back in. Accepting only "video_stats" while
+    # reporting "dense_block" is an inconsistency in this API, not a mistake by
+    # the caller.
     _vs = next((spec[k] for k in ("video_stats", "include_video_stats", "dense",
-                                  "dense_features", "stats", "video_statistics")
+                                  "dense_features", "stats", "video_statistics",
+                                  "dense_block", "dense_columns")
                 if k in spec), None)
     vstats = _listify(_vs)
 
@@ -300,7 +307,10 @@ def build_features(spec: dict) -> dict:
                     "categorical": "log columns, e.g. ['user_id','video_id','tab']",
                     "derived": "any of ['hour','dur_bucket','video_age']",
                     "video_meta": "video_features_basic columns, e.g. ['tag','music_id']",
-                    "video_stats": "video_features_statistic columns, or true for all 51"},
+                    "video_stats": "video_features_statistic columns, or true for all 51",
+                    "aggregates": "statistics computed from the training log itself: "
+                                  "video_count, video_duration_stats, video_target_loo, "
+                                  "user_video_duration_gap - or true for all"},
                 "example": {"name": "f1",
                             "categorical": ["user_id", "video_id", "author_id", "tab"],
                             "derived": ["hour", "video_age"],
@@ -334,6 +344,86 @@ def build_features(spec: dict) -> dict:
     utr = [r["user_id"] for r in tr]; uva = [r["user_id"] for r in va]
 
     # ---- optional dense block from video statistics -------------------
+    # ---- aggregate features computed FROM THE TRAINING LOG ------------
+    # Statistics of the data itself (counts, means, standard deviations),
+    # rather than columns read out of a file.
+    #
+    # ONE CONSTRAINT DOMINATES THE DESIGN: a per-USER aggregate is constant
+    # inside that user's group, and both metrics only see intra-user order, so
+    # a user's mean watch time or impression count cannot move the score at
+    # all. Only per-VIDEO aggregates and USER x VIDEO interactions vary within
+    # a group, so those are what is built here. User-level statistics appear
+    # only as the reference point of an interaction term.
+    #
+    # Every statistic is computed on TRAIN rows only. Validation rows look up
+    # values fitted on train; train rows use LEAVE-ONE-OUT so a row never
+    # contributes to the statistic used to predict it.
+    aggs = _listify(spec.get("aggregates") if "aggregates" in spec
+                    else spec.get("aggregate_features"))
+    if aggs is True:
+        # video_target_loo is deliberately NOT in the default set. Measured
+        # against an identical control it cost -0.0169 (~20 sigma) while the
+        # other three were each within noise:
+        #     control 0.6040 | count 0.6044 | duration 0.6045
+        #     user-video gap 0.6045 | target LOO 0.5871
+        # Leave-one-out target encoding is invertible: gradient boosting can
+        # solve the LOO formula for the row's own label, so training fit rises
+        # and validation collapses. It stays available by explicit request, for
+        # anyone who wants to pair it with out-of-fold encoding instead.
+        aggs = ["video_count", "video_duration_stats", "user_video_duration_gap"]
+    Atr = Ava = None
+    agg_names: list = []
+    if aggs:
+        from collections import defaultdict
+        v_n = defaultdict(int); v_dur = defaultdict(list)
+        v_pos = defaultdict(float); v_users = defaultdict(set)
+        u_dur = defaultdict(list)
+        for r in tr:
+            vid = r["video_id"]; d = _num(r.get("duration_ms"))
+            v_n[vid] += 1; v_dur[vid].append(d); v_users[vid].add(r["user_id"])
+            v_pos[vid] += _num(r.get("long_view"))
+            u_dur[r["user_id"]].append(d)
+        v_mean = {k: float(np.mean(x)) for k, x in v_dur.items()}
+        v_std = {k: float(np.std(x)) for k, x in v_dur.items()}
+        u_mean = {k: float(np.mean(x)) for k, x in u_dur.items()}
+        prior = float(np.mean([_num(r.get("long_view")) for r in tr]))
+        PRIOR_W = 20.0            # smoothing: a video seen twice should not
+                                  # swing its rate to 0 or 1
+
+        def build_agg(rs, loo: bool):
+            cols = []
+            if "video_count" in aggs:
+                cols += ["v_log_count", "v_log_users"]
+            if "video_duration_stats" in aggs:
+                cols += ["v_dur_mean", "v_dur_std"]
+            if "video_target_loo" in aggs:
+                cols += ["v_rate_smoothed"]
+            if "user_video_duration_gap" in aggs:
+                cols += ["uv_dur_gap", "uv_dur_ratio"]
+            M = np.zeros((len(rs), len(cols)), dtype=np.float32)
+            for i, r in enumerate(rs):
+                vid = r["video_id"]; uid = r["user_id"]
+                n = v_n.get(vid, 0); j = 0
+                if "video_count" in aggs:
+                    M[i, j] = np.log1p(max(n - (1 if loo else 0), 0)); j += 1
+                    M[i, j] = np.log1p(len(v_users.get(vid, ()))); j += 1
+                if "video_duration_stats" in aggs:
+                    M[i, j] = v_mean.get(vid, 0.0) / 1e4; j += 1
+                    M[i, j] = v_std.get(vid, 0.0) / 1e4; j += 1
+                if "video_target_loo" in aggs:
+                    s = v_pos.get(vid, 0.0); c = float(n)
+                    if loo:                       # remove this row's own label
+                        s -= _num(r.get("long_view")); c -= 1.0
+                    M[i, j] = (s + PRIOR_W * prior) / (c + PRIOR_W); j += 1
+                if "user_video_duration_gap" in aggs:
+                    um = u_mean.get(uid); vd = _num(r.get("duration_ms"))
+                    M[i, j] = 0.0 if um is None else (vd - um) / 1e4; j += 1
+                    M[i, j] = 0.0 if not um else float(vd / max(um, 1.0)); j += 1
+            return M, cols
+
+        Atr, agg_names = build_agg(tr, loo=True)
+        Ava, _ = build_agg(va, loo=False)
+
     Dtr = Dva = None
     if vstats:
         def dense(rs):
@@ -349,6 +439,12 @@ def build_features(spec: dict) -> dict:
                     M[i, len(vstats) + j] = np.log1p(abs(x))
             return M
         Dtr, Dva = dense(tr), dense(va)
+
+    # aggregates ride in the same dense block the models already consume
+    if Atr is not None:
+        Dtr = Atr if Dtr is None else np.hstack([Dtr, Atr])
+        Dva = Ava if Dva is None else np.hstack([Dva, Ava])
+        vstats = list(vstats) + agg_names
 
     FCACHE.mkdir(parents=True, exist_ok=True)
     p = FCACHE / f"{name}.npz"
@@ -564,6 +660,35 @@ TOOLS = {
         "args": {"query": "str", "max_results": "int"},
         "desc": "Search arXiv for published methods. Use it before proposing a "
                 "mechanism so the hypothesis is grounded in literature.",
+    },
+    "train_model": {
+        "fn": lambda family, feature_handle, params=None, budget_s=600, seed=0:
+            __import__("models").train(family, feature_handle, params, budget_s, seed),
+        "args": {"family": "catboost | lightgbm | xgboost",
+                 "feature_handle": "str, from build_features",
+                 "params": "dict of hyperparameters",
+                 "budget_s": "int seconds, the fit is sized to fit inside it"},
+        "desc": "Fit a gradient-boosting model on train, score it on validation, "
+                "and cache the predictions. These are the real CatBoost / "
+                "LightGBM / XGBoost libraries; the tool only handles the data "
+                "plumbing (group ordering for rankers, categorical indices) that "
+                "is easy to get wrong in one attempt. YOU choose the family, the "
+                "features and every hyperparameter. Returns a prediction_id.",
+    },
+    "blend": {
+        "fn": lambda prediction_ids, feature_handle=None:
+            __import__("models").blend(prediction_ids, feature_handle),
+        "args": {"prediction_ids": "list of ids from train_model",
+                 "feature_handle": "optional"},
+        "desc": "Rank-average several cached predictions and score the result. "
+                "Equal weights, no tunable coefficients - searching blend weights "
+                "on validation was measured to hurt on this benchmark.",
+    },
+    "list_predictions": {
+        "fn": lambda: __import__("models").list_predictions(),
+        "args": {},
+        "desc": "Every model trained so far this run with its validation score, "
+                "so you can pick which ones to blend.",
     },
     "recall": {
         "fn": lambda topic="", limit=12: __import__("memory").recall(topic, limit),

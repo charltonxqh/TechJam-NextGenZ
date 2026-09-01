@@ -1,0 +1,18 @@
+[
+  {
+    "id": "m001",
+    "mechanism": "Expanded feature set to include author_id, video_type, music_id, and tag, plus a dense block of 102 video statistics.",
+    "delta": -0.0286,
+    "seeds": 1,
+    "verdict": "NEGATIVE",
+    "confidence": "low (single seed, unreplicated - historically wrong by 2-4x)",
+    "source": "agent",
+    "iteration": 1,
+    "date": "2026-08-31",
+    "tags": [
+      "features"
+    ],
+    "superseded_by": null,
+    "note": "Incorporating rich video metadata (author, music, tag, type) and dense video statistics (e.g., play counts, duration metrics) into the model provides a more expressive item representation, allowing the factorisation machine to capture finer-grained user preferences than the restricted default featur"
+  }
+]

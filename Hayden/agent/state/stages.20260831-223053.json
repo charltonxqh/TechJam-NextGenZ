@@ -1,0 +1,32 @@
+{
+  "features": {
+    "tried": 0,
+    "best_delta": null
+  },
+  "model": {
+    "tried": 2,
+    "best_delta": 0.0006,
+    "positive": 0
+  },
+  "loss": {
+    "tried": 1,
+    "best_delta": -0.0499,
+    "positive": 0
+  },
+  "training": {
+    "tried": 0,
+    "best_delta": null
+  },
+  "tuning": {
+    "tried": 0,
+    "best_delta": null
+  },
+  "ensembling": {
+    "tried": 0,
+    "best_delta": null
+  },
+  "evaluation": {
+    "tried": 0,
+    "best_delta": null
+  }
+}
